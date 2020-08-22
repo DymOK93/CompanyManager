@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DepartmentViewGUI</class>
+ <widget class="QWidget" name="DepartmentViewGUI">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>322</width>
+    <height>262</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Подразделение</string>
+  </property>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>10</y>
+     <width>301</width>
+     <height>121</height>
+    </rect>
+   </property>
+   <layout class="QGridLayout" name="field_grlayout">
+    <item row="0" column="0">
+     <widget class="QLabel" name="name_lbl">
+      <property name="text">
+       <string>Наименование</string>
+      </property>
+     </widget>
+    </item>
+    <item row="0" column="1">
+     <widget class="QLineEdit" name="name_lnedit"/>
+    </item>
+    <item row="1" column="0">
+     <widget class="QLabel" name="employee_count_lbl">
+      <property name="text">
+       <string>Число сотрудников</string>
+      </property>
+     </widget>
+    </item>
+    <item row="2" column="0">
+     <widget class="QLabel" name="average_salary_lbl">
+      <property name="text">
+       <string>Средняя зарплата</string>
+      </property>
+     </widget>
+    </item>
+    <item row="1" column="1">
+     <widget class="QLineEdit" name="employee_count_lnedit"/>
+    </item>
+    <item row="2" column="1">
+     <widget class="QLineEdit" name="average_salary_lnedit"/>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>50</x>
+     <y>140</y>
+     <width>241</width>
+     <height>111</height>
+    </rect>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QCheckBox" name="enable_editing_chbox">
+      <property name="text">
+       <string>Разрешить редактирование</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="erase_department_btn">
+      <property name="text">
+       <string>Удалить подразделение</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="add_employee_btn">
+      <property name="text">
+       <string>Добавить сотрудника</string>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

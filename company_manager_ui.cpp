@@ -1216,10 +1216,15 @@ int CompanyManagerUI::zero_salary_msg_dlg() const {
 	);
 }
 
-QString CompanyManagerUI::request_load_file_path() const {
+QString CompanyManagerUI::request_load_file_path() {
 	QString path;
 	for (;;) {
-		path = m_file_handlers->dialog.getOpenFileName();								//todo: установить стандартное расширение .xml
+		path = m_file_handlers->dialog.getOpenFileName(
+			this,
+			QObject::tr("Open file"),
+			"",
+			QObject::tr("XML files(*.xml)")
+		);
 		if (path.isEmpty() || is_readable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
 			break;
 		}
@@ -1230,10 +1235,15 @@ QString CompanyManagerUI::request_load_file_path() const {
 	return path;
 }
 
-QString CompanyManagerUI::request_save_file_path() const {
+QString CompanyManagerUI::request_save_file_path() {
 	QString path;
 	for (;;) {
-		path = m_file_handlers->dialog.getSaveFileName();								//todo: отображать имя текущего файла
+		path = m_file_handlers->dialog.getSaveFileName(
+			this,
+			QObject::tr("Open file"),
+			"",
+			QObject::tr("XML files(*.xml)")
+		);							
 		if (path.isEmpty() || is_writable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
 			break;
 		}

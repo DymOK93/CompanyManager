@@ -29,8 +29,7 @@ namespace wrapper {
 
 	XmlWrapper& XmlWrapper::OwnFrom(XmlWrapper& source) {
 		if (source.IsObserver()) {
-			m_node = xml::NodeBuilder::Take(move(source.get_node()));
-			//update_dependencies();	
+			m_node = xml::NodeBuilder::Take(move(source.get_node()));	
 		}
 		else {
 			m_node = exchange(source.m_node, nullptr);										

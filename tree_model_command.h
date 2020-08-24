@@ -111,7 +111,7 @@ namespace command {
 				wrapper::string_ref department_name,							//Для обновления указателя на подразделение
 				size_t pos
 			) noexcept;
-			std::any Execute() override;										//return type: empty std::any
+			std::any Execute() override;										//return type: bool
 			std::any Cancel() override;											//return type: bool
 			Type GetType() const noexcept override;
 			static command_holder make_instance(
@@ -120,8 +120,6 @@ namespace command {
 				wrapper::string_ref department_name,
 				size_t pos
 			);
-		private:
-			std::optional<CompanyTreeModel::Memento> m_item_tree;
 		};
 
 		struct EmployeePersonalFile {

@@ -67,8 +67,8 @@ namespace wrapper {
 		virtual XmlWrapper& update_dependencies() = 0;						//ќбновл€ют служебные данные после вызова OwnFrom()
 		virtual XmlWrapper& take_dependencies(XmlWrapper& other) = 0;		//ѕередает служебные данные в другой объект
 
-		xml::Node& get_node() noexcept;
-		const xml::Node& get_node() const noexcept;
+		xml::Node& get_node();
+		const xml::Node& get_node() const;
 	protected:
 		std::variant<
 			xml::Node*,														//–ежим наблюдени€

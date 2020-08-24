@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <type_traits>
 #include <functional>
+#include <tuple>
 
 /*Qt headers*/
 #include <QString>
@@ -31,7 +32,10 @@
 class CompanyManagerUI : public QMainWindow {
     Q_OBJECT
 public:
-	using PipelineBuilder = worker::ui_internal::PipelineBuilder<CompanyManagerUI>;
+	using Company = wrapper::Company;
+	using Department = wrapper::Department;
+	using Employee = wrapper::Employee;
+	using PipelineBuilder = worker::ui_internal::PipelineBuilder<bool>;				//bool-флаг для контроля успешного выполнения разнотипных операций
 	using DepartmentViewInfo = DepartmentView::view_info;
 	using EmployeeViewInfo = EmployeeView::view_info;
 	using EmployeePersonalFile = command::xml_wrapper::EmployeePersonalFile;
@@ -57,15 +61,16 @@ public slots:
 private slots:
 	void selection_changed(const QItemSelection& selected, const QItemSelection& deselected);
 	bool new_department();
+	bool remove_department(const DepartmentViewInfo& view_info);
 	bool rename_department(const DepartmentViewInfo& view_info, const QString& new_name);
 	bool new_employee(const DepartmentViewInfo& view_info);
-	bool remove_department(const DepartmentViewInfo& view_info);
+	bool remove_employee(const EmployeeViewInfo& view_info);
 	bool change_employee_surname(const EmployeeViewInfo& view_info, const QString& new_middle_name);		
 	bool change_employee_name(const EmployeeViewInfo& view_info, const QString& new_middle_name);			
 	bool change_employee_middle_name(const EmployeeViewInfo& view_info, const QString& new_middle_name);	
 	bool change_employee_function(const EmployeeViewInfo& view_info, const QString& new_function);			
-	bool update_employee_salary(const EmployeeViewInfo& view_info, wrapper::Employee::salary_t new_salary);
-	bool remove_employee(const EmployeeViewInfo& view_info);
+	bool update_employee_salary(const EmployeeViewInfo& view_info, Employee::salary_t new_salary);
+	
 private:
 
 /*Вспомогательные структуры*/
@@ -97,11 +102,13 @@ private:
 	void update_undo_redo_buttons();								//Активация/деактивация кнопок "Отменить" и "Вернуть"
 	void update_redo_undo_actions_after_editing();					//Объединяет два вышеперечисленных действия
 	template <class FirstHandler, class SecondHandler>				//Для смены последовательности повтора операций
-	void redo_helper(FirstHandler&& first_handler, SecondHandler&& second_handler){
+	bool redo_helper(FirstHandler&& first_handler, SecondHandler&& second_handler){
+		bool success{ false };
 		PipelineBuilder()
 			.AddHandler(std::forward<FirstHandler>(first_handler))
 			.AddHandler(std::forward<SecondHandler>(second_handler))
-			.Assemble()->Process(*this);
+			.Assemble()->Process(success);
+		return success;
 	}
 
 /*Настройка и сброс элементов отображения*/
@@ -166,7 +173,7 @@ private:
 	QString request_load_file_path();
 	QString request_save_file_path();
 	QString get_current_file_path();
-	QString extract_file_name(const QString& filename);
+	QString extract_file_name(const QString& path);						//Возвращает имя файла без расширения
 
 	bool is_loaded() const;
 	bool is_saved() const;
@@ -182,22 +189,16 @@ private:
 	bool handle_load_result(worker::file_operation::Result result);
 	std::optional<worker::file_operation::Result> save_helper();
 	bool handle_save_result(worker::file_operation::Result result);
-	std::pair<wrapper::Company::department_view_it, bool> add_department_helper(wrapper::Department&& department);	//Результат и итератор	
-	std::pair<wrapper::Company::department_view_it, bool> insert_department_helper(wrapper::Department&& department, wrapper::string_ref before);																												//Экономим 1 вызов move c-tor
+	std::optional<Company::department_view_it> add_department_helper(Department&& department);	//Результат и итератор	
+	std::optional<Company::department_view_it> insert_department_helper(Department&& department, wrapper::string_ref before);																												//Экономим 1 вызов move c-tor
 	bool rename_department_helper(const DepartmentViewInfo& view_info, const QString& new_name);
 	bool rename_employee_in_tree_model(const EmployeeViewInfo& view_info, const QString& new_full_name);	//Однотипные изменения модели стоит вынести в отдельный метод
 
 /*Распаковка данных, переданных элементами интерфейса */
-	static const wrapper::Department* extract_department(const DepartmentViewInfo& view_info);
+	static const Department* extract_department_ptr(const DepartmentViewInfo& view_info);
 	static wrapper::string_ref extract_department_name(const DepartmentViewInfo& view_info);
 	static wrapper::string_ref extract_department_name(const EmployeeViewInfo& view_info);
 	static EmployeePersonalFile extract_employee_personal_data(const EmployeeViewInfo& view_info);
-
-/*Извлечение значения из std::any*/
-	template <typename Ty>
-	static Ty extract_value(std::any value) {
-		return std::any_cast<Ty>(std::move(value));
-	}
 
 private:
 

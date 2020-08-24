@@ -89,25 +89,21 @@ namespace command {
 		}
 
 		std::any RemoveDepartment::Execute() {
-			m_item_tree = MyBase::get_target().DumpDepartmentItem(
+			return MyBase::get_target().RemoveDepartmentItem(
 				get_department_position()
 			);
-			return make_default_value();
 		}
 
 		std::any RemoveDepartment::Cancel() {
-			return MyBase::get_target().RestoreDepartmentItem(
-				std::move(*m_item_tree),
-				std::addressof(
-					get_company().at(get_department_name())
-				)
+			return MyBase::get_target().InsertDepartmentItem(
+				get_company().at(get_department_name()),
+				get_department_position()
 			);
 		}
 
 		Type RemoveDepartment::GetType() const noexcept {
 			return Type::View_RemoveDepartment;
 		}
-
 
 		RemoveDepartment::command_holder RemoveDepartment::make_instance(
 			CompanyTreeModel& ctm,

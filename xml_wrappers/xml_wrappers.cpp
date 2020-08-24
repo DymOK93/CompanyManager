@@ -99,7 +99,7 @@ namespace wrapper {
 		throw out_of_range(move(key) + " doesn't exist");
 	}
 
-	xml::Node& XmlWrapper::get_node() noexcept {
+	xml::Node& XmlWrapper::get_node() {
 		if (holds_alternative<Node*>(m_node)) {										//Получение ссылки на узел
 			return *get<Node*>(m_node);
 		}
@@ -108,7 +108,7 @@ namespace wrapper {
 		}
 	}
 
-	const xml::Node& XmlWrapper::get_node() const noexcept {
+	const xml::Node& XmlWrapper::get_node() const {
 		if (holds_alternative<Node*>(m_node)) {
 			return *get<Node*>(m_node);
 		}

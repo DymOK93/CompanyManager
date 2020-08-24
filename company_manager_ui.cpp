@@ -5,19 +5,842 @@ CompanyManagerUI::CompanyManagerUI(QWidget *parent)
 
 	m_gui->setupUi(this);
 
-	/*Подключение кнопок меню*/
+/*Подключение кнопок меню*/
 	connect_menu_bar();
 	update_undo_redo_buttons();
 
-	/*Настройка древовидного отображения*/
+/*Настройка древовидного отображения*/
 	auto& tree_view{ *m_gui->tree_view };
 	tree_view.setModel(m_tree_model.get());
 	connect(tree_view.selectionModel(), &QItemSelectionModel::selectionChanged, this, &CompanyManagerUI::selection_changed);
 	show_viewers(false);
 
-	/*Инициализация и подключение вспомогательных виджетов*/
+/*Инициализация и подключение вспомогательных виджетов*/
 	initialize_stacked_viewers();
 	connect_item_viewers();
+}
+
+
+/*******************************************************************************************************************************
+Об std::function и Small Object Optimization
+
+Известно, что std::function использует аллокацию в heap для хранения callable-объектов.
+Поскольку выделение памяти - операция крайне медленная, все существующие реализации имеют Small Object Optimization
+для объектов небольшого размера.
+Однако размер SSO-буфера не стандартизирован
+(лишь гарантируется, что он не менее 8 байт - https://en.cppreference.com/w/cpp/utility/functional/function/function)
+и не афишируется разработчиками библиотек.
+Опытным путём выяснено, что на GCC8.1 он составляет 16 байт, MSVC2019 последних версий умеет оптимизировать до 40 байт.
+Посколько для хранения самих Worker'ов используется кастомный аллокатор, хотелось бы избежать дополнительных
+выделений памяти.
+Ориентируясь на меньшее значение буфера (16 байт), будем использовать захват this (т.к. срок жизни объект класса
+никогда не закончится раньше срока жизни цепочки обработчиков) и захват по ссылке либо единственной локальной переменной,
+либо std::tuple<Types&...>, чтобы гарантированно воспользоваться преимуществами SSO.
+********************************************************************************************************************************/
+
+bool CompanyManagerUI::create() {
+	bool successfully_created{ false };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this](bool& _) {
+				return close_helper(WarningMode::Hide);						//Закрываем ранее открытые документы. false, если пользователь отменил операцию
+			})
+		.AddHandler(
+			[this](bool& successfully_created) {
+				successfully_created = create_helper();
+				return successfully_created;
+			})
+		.AddHandler(
+			[this](bool& _) {
+				setup_viewers();
+					return false;
+			})
+		.Assemble()->Process(successfully_created);
+	return successfully_created;
+}
+
+bool CompanyManagerUI::load() {
+	bool successfully_loaded{ false };
+	QString path;
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &path](bool& _) {
+				path = request_load_file_path();
+				return !path.isEmpty();														//В случае отмены операции старый документ останется открытым
+			})
+		.AddHandler(
+			[this](bool& _) {
+				return close_helper(WarningMode::Hide);				//Закрываем ранее открытые документы. false, если пользователь отмени операцию
+			})
+		.AddHandler(
+			[this, &path](bool& _) {
+				set_file_path(path);
+				return true;
+			})
+		.AddHandler(
+			[this](bool& successfully_loaded) {
+				auto result{ load_helper() };
+				if (result) {
+					successfully_loaded = handle_load_result(*result);
+				}
+				else {
+					unable_to_load_msg();
+				}
+				return successfully_loaded;
+			})
+		.AddHandler(
+				[this](bool& _) {
+					setup_viewers();
+					return false;
+				})
+		.Assemble()->Process(successfully_loaded);
+	return successfully_loaded;
+}
+
+bool CompanyManagerUI::save() {
+	bool successfully_saved{ false };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this](bool& successfully_saved) {
+				QString path{ get_current_file_path() };
+				if (
+					path.isEmpty()
+					|| !is_writable(path)
+					) {																	//Если путь пуст или некорректен - переходим в "Сохранить как"
+					successfully_saved = save_as();
+					return false;
+				}
+				return true;														//Иначе продолжаем движение по цепочке обработчиков
+			})
+		.AddHandler(
+			[this](bool& _) {
+				if (!is_loaded()) {
+					not_loaded_msg();
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this](bool& _) {
+				if (is_saved()) {
+					already_saved_msg();
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this](bool& successfully_saved) {
+				auto result{ save_helper() };
+				if (result) {
+					successfully_saved = handle_save_result(*result);
+				}
+				else {
+					unable_to_save_msg();
+				}
+				return false;														//Завершаем цепочку вручную, 
+			})																		//чтобы не производить дополнительную проверку в pass_on Worker'a
+		.Assemble()->Process(successfully_saved);
+	return successfully_saved;
+}
+
+
+bool CompanyManagerUI::save_as() {
+	QString path;
+	bool successfully_saved{ false };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this](bool& _) {
+				if (!is_loaded()) {
+					not_loaded_msg();
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this](bool& _) {
+				if (is_saved()) {
+					already_saved_msg();
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &path](bool& _) {
+				path = request_save_file_path();
+				return !path.isEmpty();													//Если путь пустой - прекращаем обработку (операция отменена пользователем)
+			})
+		.AddHandler(
+			[this, &path](bool& _) {
+				set_file_path(path);
+				return true;
+			})
+		.AddHandler(
+			[this](bool& successfully_saved) {
+				auto result{ save_helper() };
+				if (result) {
+					successfully_saved = handle_save_result(*result);
+				}
+				return false;													//Завершаем цепочку вручную, 
+			})																	//чтобы не производить дополнительную проверку в pass_on Worker'a
+		.Assemble()->Process(successfully_saved);
+	return successfully_saved;
+}
+
+void CompanyManagerUI::close() {
+	close_helper(WarningMode::Show);											//Предупреждение, если нет открытых документов
+}
+
+void CompanyManagerUI::exit() {
+	QWidget::close();
+}
+
+bool CompanyManagerUI::undo() {									//Порядок отмены операций един для команд различных типов
+	bool wrapper_success{ false };
+	PipelineBuilder()
+		.AddHandler(
+			[this](bool& wrapper_success) {
+				auto [_, result] {m_tasks->modify_xml.Cancel()};
+				if (result != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					wrapper_success = true;
+				}
+				return true;									//Попытка изменить данные в TreeModel
+			})
+		.AddHandler(
+			[this](bool& wrapper_success) {
+				auto [_, result] {m_tasks->tree_model.Cancel()};
+				if (result != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+					if (wrapper_success) {
+						wrapper_success = false;
+						m_tasks->modify_xml.RepeatWithoutQueueing();		//Если обновление отбражения не удалось, но дерево данных обновлено успешно - отменяем изменения
+					}
+				}
+				return false;
+			})
+		.Assemble()->Process(wrapper_success);
+	update_undo_redo_buttons();
+	update_viewers();
+	return wrapper_success;
+}
+
+bool CompanyManagerUI::redo() {									//Порядок повторного выполнения операций зависит от типа команды
+	bool wrapper_success{ false };
+	bool reversed_order{
+		*m_tasks->modify_xml.GetLastProcessedPurpose() == command::Purpose::Remove	//Последняя выполненная (т.е. отменяемая сейчас) команда - удаление элемента
+	};
+
+	auto redo_in_wrapper_tree{
+		[this, reversed_order](bool& wrapper_success) {
+			auto [_, result] {m_tasks->modify_xml.Repeat()};
+			if (result != task::ResultType::Success) {
+				handle_internal_fatal_error(m_tasks->modify_xml);
+				if (reversed_order) {
+					m_tasks->tree_model.CancelWithoutQueueing();
+				}
+			}
+			else {
+				wrapper_success = true;
+			}
+			return wrapper_success;
+		}
+	};
+	auto redo_in_tree_model{
+		[this, reversed_order](bool& wrapper_success) {
+			auto [_, result] {m_tasks->tree_model.Repeat()};
+			if (result != task::ResultType::Success) {
+				handle_internal_fatal_error(m_tasks->modify_xml);
+				if (wrapper_success) {
+					wrapper_success = false;
+				}
+				if (!reversed_order) {
+					m_tasks->modify_xml.CancelWithoutQueueing();
+				}
+			}
+			else {
+				wrapper_success = true;
+			}
+			return wrapper_success;
+		}
+	};
+	if (reversed_order) {
+		wrapper_success = redo_helper(std::ref(redo_in_tree_model), std::ref(redo_in_wrapper_tree));		//Т.к. обработчики - локальные переменные, можно передать их 
+	}																										//с помощью std::reference_wrapper
+	else {
+		wrapper_success = redo_helper(std::ref(redo_in_wrapper_tree), std::ref(redo_in_tree_model));
+	}
+	update_undo_redo_buttons();
+	update_viewers();
+	return wrapper_success;
+}
+
+void CompanyManagerUI::about_program() const {
+	show_message(
+		message::Type::Info,
+		u8"О программе",
+		u8"Company Manager - управление персоналом\n"
+		u8"Обработка данных подразделений и сотрудников\n",
+		QMessageBox::Button::Ok
+	);
+}
+
+void CompanyManagerUI::selection_changed(const QItemSelection& selected, const QItemSelection& deselected) {
+	const auto& index_list{ selected.indexes() };
+	if (index_list.isEmpty()) {											//Элементы для отображения отсутствуют
+		select_viewer(QModelIndex());									//Для установки виджета-заглушки в качестве отображения
+	}
+	else {
+		select_viewer(index_list.front());								//Возможен выбор только одного элемента
+	}
+}
+
+bool CompanyManagerUI::new_department() {
+	bool successfully_inserted{ false };
+
+	QModelIndex current_selection_idx{ get_current_selection_index() };									//Индекс выделенного элемента
+	bool append{																						//Добавление в конец
+		!current_selection_idx.isValid()																//Нет выделенных элементов
+		|| *m_tree_model->GetItemType(current_selection_idx) != CompanyTreeModel::ItemType::Department	//Валидность индекса уже проверена
+		|| current_selection_idx.row() + 1 == m_tree_model->rowCount()									//Последний элемент в списке
+	};
+
+	wrapper::DepartmentBuilder builder;
+	builder.SetAllocator(m_company_manager->GetAllocator());
+	std::variant<std::monostate, Company::department_view_it, Department> department;					//Для проверки дубликатов перед вставкой
+
+	auto arg_tuple{ std::tie(builder, department, current_selection_idx, append) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[&builder, &msg_factories = m_message_factories](bool& _) {
+				dialog::NewDepartment new_department_dialog(builder, msg_factories);				//Диалоговое окно создания поздразделения
+				return new_department_dialog.exec() == QDialog::Accepted;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& _) {
+				auto& [builder, department_holder, _1, _2] {arg_tuple};			//Распаковываем кортеж обратно. 
+				department_holder.emplace<Department>(builder.Assemble());		//Спецификатор const к ссылке auto& будет добавлен автоматически при необходимости
+				auto& department{ std::get<Department>(department_holder) };	
+
+				if (m_company_manager->Read().Containts(department.GetName())) {
+					already_exists_msg(
+						QString(u8"Подразделение \"") + QString::fromStdString(department.GetName()) + u8'\"' //уже сущесвует
+					);
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_inserted) {
+				auto& [builder, department_holder, current_selection_idx, append] {arg_tuple};
+				if (append) {
+					if (auto it = add_department_helper(
+						std::move(std::get<Department>(department_holder))
+					); it.has_value()) {
+						department_holder = *it;
+						successfully_inserted = true;
+					}
+				}
+				else {
+					if (auto it = insert_department_helper(
+						std::move(std::get<Department>(department_holder)),
+						*m_tree_model->GetDepartmentNameRef(
+							m_tree_model->GetNextItem(current_selection_idx)		//Получаем имя элемента, следующего за выделенным
+						)
+					); it.has_value()) {
+						department_holder = *it;
+						successfully_inserted = true;
+					}
+				};
+				return successfully_inserted;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_inserted) {
+				auto& [_, department_holder, current_selection_idx, append] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->tree_model.Process(
+						command::tree_model::InsertDepartment::make_instance(
+							*m_tree_model, *m_company_manager,
+							std::get<Company::department_view_it>(department_holder)->GetName(),
+							static_cast<size_t>(current_selection_idx.row()) + 1
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->tree_model);
+				}
+				else {
+					successfully_inserted = std::any_cast<bool>(value);
+				}
+				return !successfully_inserted;														//Отмена операции и очистка в случае неудачи
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {
+				task_manager.CancelWithoutQueueing();
+				return false;
+			})
+		.Assemble()->Process(successfully_inserted);
+	update_redo_undo_actions_after_editing();
+	return successfully_inserted;
+}
+
+bool CompanyManagerUI::remove_department(const DepartmentViewInfo& view_info) {
+	bool successfully_removed{ false };											//сначала - из TreeModel, потом - из CompanyManager
+	wrapper::string_ref department_name{ extract_department_name(view_info) };
+	auto arg_tuple{ std::tie(view_info, department_name) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &arg_tuple](bool& _0) {
+				const auto& [view_info, department_name] {arg_tuple};
+				auto [_1, result_type] {
+					m_tasks->tree_model.Process(
+						command::tree_model::RemoveDepartment::make_instance(
+							*m_tree_model,
+							*m_company_manager,
+							department_name,										//После удаления выделение сместится на другой элемент
+							static_cast<size_t>(view_info.index.row())
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->tree_model);
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_removed) {
+				const auto& [_0, department_name] {arg_tuple};
+				auto [_1, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::RemoveDepartment::make_instance(
+							*m_company_manager,
+							department_name
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_removed = true;
+				}
+				return false;													//Вручную останавливаем движение по цепочке обработчиков
+			})
+	.Assemble()->Process(successfully_removed);
+	update_redo_undo_actions_after_editing();
+	return successfully_removed;
+}
+
+bool CompanyManagerUI::rename_department(const DepartmentViewInfo& view_info, const QString& new_name) {
+	if (new_name.isEmpty()) {
+		empty_field_msg(u8"Наименование");
+		return false;
+	}
+	if (!rename_department_helper(view_info, new_name)) {
+		m_item_viewers.department->RestoreName();												//Возврат исходного значения
+		return false;
+	}
+	reset_redo_queues();
+	update_undo_redo_buttons();
+	return true;
+}
+
+bool CompanyManagerUI::new_employee(const DepartmentViewInfo& view_info) {
+	bool successfully_inserted{ false };
+
+	wrapper::EmployeeBuilder builder;
+	builder.SetAllocator(m_company_manager->GetAllocator());
+	std::variant<std::monostate, Department::employee_view_it, Employee> employee;						//Временное хранилище
+
+	auto arg_tuple{ std::tie(builder, employee, view_info) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[&builder, &msg_factories = m_message_factories](bool& _) {
+				dialog::NewEmployee new_employee_dialog(builder, msg_factories);							//Диалоговое окно создания поздразделения
+				return new_employee_dialog.exec() == QDialog::Accepted;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& _) {
+				auto& [builder, employee_holder, view_info] {arg_tuple};
+				employee_holder.emplace<Employee>(builder.Assemble());
+				const auto& employee_name{ std::get<Employee>(employee_holder).GetFullName() };
+
+				if (extract_department_ptr(view_info)->Containts(employee_name)
+					) {
+					already_exists_msg(
+						QString(u8"Сотрудник с ФИО \"") + CompanyTreeModel::FullNameRefToQString(employee_name) + u8'\"'
+					);
+					return false;
+				}
+				return true;
+			})																									//из Company
+		.AddHandler(
+			[this, &arg_tuple](bool& _0) {
+				auto& [_1, employee_holder, view_info] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::InsertEmployee::make_instance(
+							*m_company_manager,
+							extract_department_name(view_info),
+							std::move(std::get<Employee>(employee_holder))								//Перемещаем сотрудника в команду
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+					return false;
+				}
+				employee_holder = std::any_cast<Department::employee_it>(value);				//Неявное преобразование в employee_view_it
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_inserted) {
+				auto& [_, employee_holder, view_info] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->tree_model.Process(
+						command::tree_model::InsertEmployee::make_instance(
+							*m_tree_model,
+							command::tree_model::WrapperInfo{
+								std::addressof(m_company_manager->Read()),
+								extract_department_name(view_info)
+							},
+							view_info.index.row(),												//Индекс подразделения
+							std::get<Department::employee_view_it>(employee_holder)->second		//Передаем ссылку на вставленный элемент
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->tree_model);
+					return false;
+				}
+				successfully_inserted = std::any_cast<bool>(value);
+				return !successfully_inserted;
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {					//Отмена операции и очистка в случае неудачи
+				task_manager.CancelWithoutQueueing();
+				return false;
+			})
+		.Assemble()->Process(successfully_inserted);
+	if (successfully_inserted) {
+		m_item_viewers.department->UpdateStats();								//Т.к. операция добавления сотрудника выполняется из окна
+	}																			//статистики подразделения, обновляем статистику
+	update_redo_undo_actions_after_editing();
+	return successfully_inserted;
+}
+
+bool CompanyManagerUI::remove_employee(const EmployeeViewInfo& view_info) {		//Удаление необходимо выполнять в обратном порядке:
+	bool successfully_removed{ false };											//сначала - из TreeModel, потом - из CompanyManager
+	EmployeePersonalFile personal_data{ extract_employee_personal_data(view_info) };	//Если не сохранить предварительно, после удаления из TreeModel индекс обновится
+																						//и extract_employee_personal_data() вернёт данные элемента,
+	PipelineBuilder()																	//следующего за удалённым!
+		.AddHandler(
+			[this, &view_info](bool& _0) {
+				auto [_1, result_type] {
+					m_tasks->tree_model.Process(
+						command::tree_model::RemoveEmployee::make_instance(
+							*m_tree_model,
+							command::tree_model::WrapperInfo{
+								std::addressof(m_company_manager->Read()),
+								extract_department_name(view_info)
+							},
+							view_info.index										//QModelIndex пока ещеё валиден
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->tree_model);
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &personal_data](bool& successfully_removed) {
+				auto [_, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::RemoveEmployee::make_instance(
+							*m_company_manager,
+							personal_data
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_removed = true;
+				}
+				return false;													//Вручную останавливаем движение по цепочке обработчиков
+			})
+		.Assemble()->Process(successfully_removed);
+	update_redo_undo_actions_after_editing();
+	return successfully_removed;
+}
+
+bool CompanyManagerUI::change_employee_surname(const EmployeeViewInfo& view_info, const QString& new_surname) {
+	bool successfully_changed{ false };
+	QString new_full_name;
+
+	auto arg_tuple{ std::tie(view_info, new_surname, new_full_name) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &new_surname](bool& _) {
+				if (new_surname.isEmpty()) {
+					empty_field_msg(u8"Фамилия");
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_surname, new_full_name] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::ChangeEmployeeSurname::make_instance(
+							*m_company_manager,
+							extract_employee_personal_data(view_info),
+							new_surname.toStdString()
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_changed = warning_if_employee_already_exists(std::any_cast<wrapper::RenameResult>(value));
+				}
+				return successfully_changed;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_surname, new_full_name] {arg_tuple};
+				new_full_name = CompanyTreeModel::FullNameRefToQString(
+					extract_employee_personal_data(view_info).employee_name
+				);																	 //Для обновления отображения после удачого редактирования дерева
+				successfully_changed = rename_employee_in_tree_model(view_info, new_full_name);
+				return !successfully_changed;
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {
+				task_manager.CancelWithoutQueueing();
+				return false;
+			})
+		.Assemble()->Process(successfully_changed);
+	if (!successfully_changed) {
+		m_item_viewers.employee->RestoreSurname();
+	}
+	update_redo_undo_actions_after_editing();
+	return successfully_changed;
+}
+
+bool CompanyManagerUI::change_employee_name(const EmployeeViewInfo& view_info, const QString& new_name) {
+	bool successfully_changed{ false };
+	QString new_full_name;
+
+	auto arg_tuple{ std::tie(view_info, new_name, new_full_name) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &new_name](bool& _) {
+				if (new_name.isEmpty()) {
+					empty_field_msg(u8"Имя");
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_name, new_full_name] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::ChangeEmployeeName::make_instance(
+							*m_company_manager,
+							extract_employee_personal_data(view_info),
+							new_name.toStdString()
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_changed = warning_if_employee_already_exists(
+						std::any_cast<wrapper::RenameResult>(value)
+					);
+				}
+				return successfully_changed;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, _, new_full_name] {arg_tuple};
+				new_full_name = CompanyTreeModel::FullNameRefToQString(
+					extract_employee_personal_data(view_info).employee_name
+				);
+				successfully_changed = rename_employee_in_tree_model(view_info, new_full_name);
+				return !successfully_changed;
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {
+				task_manager.CancelWithoutQueueing();
+				return false;
+			})
+		.Assemble()->Process(successfully_changed);
+	if (!successfully_changed) {
+		m_item_viewers.employee->RestoreName();
+	}
+	update_redo_undo_actions_after_editing();
+	return successfully_changed;
+}
+
+bool CompanyManagerUI::change_employee_middle_name(const EmployeeViewInfo& view_info, const QString& new_middle_name) {
+	bool successfully_changed{ false };
+	QString new_full_name;
+
+	auto arg_tuple{ std::tie(view_info, new_middle_name, new_full_name) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &new_middle_name](bool& _) {
+				if (new_middle_name.isEmpty()) {
+					empty_optional_field_msg_dlg(u8"Отчество");
+					return false;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_middle_name, new_full_name] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::ChangeEmployeeMiddleName::make_instance(
+							*m_company_manager,
+							extract_employee_personal_data(view_info),
+							new_middle_name.toStdString()
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_changed = warning_if_employee_already_exists(
+						std::any_cast<wrapper::RenameResult>(value)
+					);
+				}
+				return successfully_changed;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_middle_name, new_full_name] {arg_tuple};
+				new_full_name = CompanyTreeModel::FullNameRefToQString(
+					extract_employee_personal_data(view_info).employee_name
+				);
+				successfully_changed = rename_employee_in_tree_model(view_info, new_full_name);
+				return !successfully_changed;
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {
+				task_manager.CancelWithoutQueueing();
+				return false;
+			})
+		.Assemble()->Process(successfully_changed);
+		if (!successfully_changed) {
+			m_item_viewers.employee->RestoreMiddleName();
+		}
+	update_redo_undo_actions_after_editing();
+	return successfully_changed;
+}
+
+bool CompanyManagerUI::change_employee_function(const EmployeeViewInfo& view_info, const QString& new_function) {
+	bool successfully_changed{ false };
+
+	auto arg_tuple{ std::tie(view_info, new_function) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &new_function](bool& _) {
+				if (new_function.isEmpty()) {
+					return empty_optional_field_msg_dlg(u8"Должность") == QMessageBox::StandardButton::Ok;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_changed) {
+				auto& [view_info, new_function] {arg_tuple};
+				auto [_, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::ChangeEmployeeFunction::make_instance(
+							*m_company_manager,
+							extract_employee_personal_data(view_info),
+							new_function.toStdString()
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_changed = true;
+				}
+				return false;
+			})
+		.Assemble()->Process(successfully_changed);
+	if (!successfully_changed) {
+		m_item_viewers.employee->RestoreFunction();														//Считывание из дерева и восстановление предыдущего значения
+	}
+	update_redo_undo_actions_after_editing();
+	return successfully_changed;
+}
+
+bool CompanyManagerUI::update_employee_salary(const EmployeeViewInfo& view_info, Employee::salary_t new_salary) {
+	bool successfully_updated{ false };
+
+	auto arg_tuple{ std::tie(view_info, new_salary) };
+
+	PipelineBuilder()
+		.AddHandler(
+			[this, &new_salary](bool& _) {
+				if (!new_salary) {
+					return zero_salary_msg_dlg() == QMessageBox::StandardButton::Ok;
+				}
+				return true;
+			})
+		.AddHandler(
+			[this, &arg_tuple](bool& successfully_updated) {
+				auto& [view_info, new_salary] {arg_tuple};
+				auto [_, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::UpdateEmployeeSalary::make_instance(
+							*m_company_manager,
+							extract_employee_personal_data(view_info),
+							new_salary
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
+				}
+				else {
+					successfully_updated = true;
+				}
+				return false;
+			})
+		.Assemble()->Process(successfully_updated);
+	if (!successfully_updated) {
+		m_item_viewers.employee->RestoreSalary();														//Повторное считывание из дерева
+	}
+	update_redo_undo_actions_after_editing();
+	return successfully_updated;
 }
 
 void CompanyManagerUI::connect_menu_bar() {
@@ -62,7 +885,6 @@ void CompanyManagerUI::reset_redo_queues() {
 	m_tasks->tree_model.ResetRepeatQueue();
 }
 
-
 void CompanyManagerUI::update_undo_redo_buttons() {
 	m_gui->undo_btn->setEnabled(
 		static_cast<bool>(m_tasks->modify_xml.CanBeCanceled())
@@ -92,7 +914,7 @@ void CompanyManagerUI::setup_viewers() {
 void CompanyManagerUI::select_viewer(const QModelIndex& selected_item) {
 	using ItemType = CompanyTreeModel::ItemType;
 	auto item_type{ m_tree_model->GetItemType(selected_item) };
-	if (!item_type) {
+	if (!item_type || *item_type == ItemType::Company) {							//Не выделены поздразделения или работники
 		m_gui->stacked_viewer->setCurrentWidget(m_item_viewers.dummy);
 	}
 	switch (*item_type) {
@@ -111,7 +933,7 @@ void CompanyManagerUI::update_department_viewer(const QModelIndex& selected_item
 	m_item_viewers.department->SetDepartment(
 		DepartmentView::view_info{ 
 			selected_item, 
-			std::get<const wrapper::Department*>(
+			std::get<const Department*>(
 				m_tree_model->GetItemNode(selected_item)
 				)
 		}
@@ -124,7 +946,7 @@ void CompanyManagerUI::update_employee_viewer(const QModelIndex& selected_item) 
 			selected_item, 
 			std::tuple{
 				*m_tree_model->GetDepartmentNameRef(selected_item),		//Раз объект выбран - он точно существует и является подразделением или сотрудником
-				std::get<const wrapper::Employee*>(
+				std::get<const Employee*>(
 						m_tree_model->GetItemNode(selected_item)
 				)
 			}
@@ -155,289 +977,50 @@ void CompanyManagerUI::reset_helper() {														//Сброк при закрытии докуме
 	show_viewers(false);
 }
 
-bool CompanyManagerUI::create() {
-	bool successfully_created{ false };
-
-	PipelineBuilder()
-		.AddHandler(
-			[close_if_opened = &CompanyManagerUI::close_helper](CompanyManagerUI& cm_ui) {
-				return std::invoke(close_if_opened, cm_ui, WarningMode::Hide);				//Закрываем ранее открытые документы. false, если пользователь отменил операцию
-			})
-		.AddHandler(
-			[creator = &CompanyManagerUI::create_helper, &successfully_created](CompanyManagerUI& cm_ui) {
-				successfully_created = std::invoke(creator, cm_ui);
-				return successfully_created;
-			})
-		.AddHandler(
-			[view_updater = &CompanyManagerUI::setup_viewers](CompanyManagerUI& cm_ui) {
-				std::invoke(view_updater, cm_ui);
-				return false;
-			})
-		.Assemble()->Process(*this);
-	return successfully_created;
-}
-
-bool CompanyManagerUI::load() {
-	bool successfully_loaded{ false };
-	QString path;
-
-	PipelineBuilder()
-		.AddHandler(
-			[request = &CompanyManagerUI::request_load_file_path, &path](CompanyManagerUI& cm_ui) {
-				path = std::invoke(request, cm_ui);											
-				return !path.isEmpty();														//В случае отмены операции старый документ останется открытым
-			})
-		.AddHandler(
-			[close_if_opened = &CompanyManagerUI::close_helper](CompanyManagerUI& cm_ui) {
-				return std::invoke(close_if_opened, cm_ui, WarningMode::Hide);				//Закрываем ранее открытые документы. false, если пользователь отмени операцию
-			})
-		.AddHandler(
-			[set_path = &CompanyManagerUI::set_file_path, &path](CompanyManagerUI& cm_ui) {
-				std::invoke(set_path, cm_ui, path);
-				return true;
-			})
-		.AddHandler(
-			[loader = &CompanyManagerUI::load_helper,
-			result_handler = &CompanyManagerUI::handle_load_result, &successfully_loaded](CompanyManagerUI& cm_ui) {
-				auto result{ std::invoke(loader, cm_ui) };
-				if (result) {
-					successfully_loaded = std::invoke(result_handler, cm_ui, *result);
-				}
-				return successfully_loaded;
-			})
-		.AddHandler(
-			[view_updater = &CompanyManagerUI::setup_viewers](CompanyManagerUI& cm_ui) {
-				std::invoke(view_updater, cm_ui);
-				return false;
-			})
-		.Assemble()->Process(*this);
-	return successfully_loaded;
-}
-
-bool CompanyManagerUI::save() {
-	bool successfully_saved{ false };
-
-	PipelineBuilder()
-		.AddHandler(
-			[get_path = &CompanyManagerUI::get_current_file_path,
-			checker = &CompanyManagerUI::is_writable,
-			save_as = &CompanyManagerUI::save_as, &successfully_saved](CompanyManagerUI& cm_ui) {
-				QString path{ std::invoke(get_path, cm_ui) };
-				if (
-					path.isEmpty()
-					|| !std::invoke(checker, cm_ui,path)
-				){																	//Если путь пуст или некорректен - переходим в "Сохранить как"
-					successfully_saved = std::invoke(save_as, cm_ui);
-					return false;
-				}
-				return true;														//Иначе продолжаем движение по цепочке обработчиков
-			})
-		.AddHandler(
-			[loaded = &CompanyManagerUI::is_loaded, warning = &CompanyManagerUI::not_loaded_msg](CompanyManagerUI& cm_ui) {
-				if (!std::invoke(loaded, cm_ui)) {
-					std::invoke(warning, cm_ui);
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[saved = &CompanyManagerUI::is_saved, warning = &CompanyManagerUI::already_saved_msg](CompanyManagerUI& cm_ui) {
-				if (std::invoke(saved, cm_ui)) {
-					std::invoke(warning, cm_ui);
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[saver = &CompanyManagerUI::save_helper, 
-			result_handler = &CompanyManagerUI::handle_save_result, &successfully_saved](CompanyManagerUI& cm_ui) {
-				auto result{ std::invoke(saver, cm_ui) };
-				if (result) {
-					successfully_saved = std::invoke(result_handler, cm_ui, *result);
-				}
-				return false;														//Завершаем цепочку вручную, 
-			})																		//чтобы не производить дополнительную проверку в pass_on Worker'a
-		.Assemble()->Process(*this);
-	return successfully_saved;
-}
-
-
-bool CompanyManagerUI::save_as() {
-	QString path;
-	bool successfully_saved{ false };
-
-	PipelineBuilder()
-		.AddHandler(
-			[loaded = &CompanyManagerUI::is_loaded, warning = &CompanyManagerUI::not_loaded_msg](CompanyManagerUI& cm_ui) {
-				if (!std::invoke(loaded, cm_ui)) {
-					std::invoke(warning, cm_ui);
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[saved = &CompanyManagerUI::is_saved, warning = &CompanyManagerUI::already_saved_msg](CompanyManagerUI& cm_ui) {
-				if (std::invoke(saved, cm_ui)) {
-					std::invoke(warning, cm_ui);
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[request = &CompanyManagerUI::request_save_file_path, &path](CompanyManagerUI& cm_ui) {
-				path = std::invoke(request, cm_ui);
-				return !path.isEmpty();													//Если путь пустой - прекращаем обработку (операция отменена пользователем)
-			})
-		.AddHandler(
-			[set_path = &CompanyManagerUI::set_file_path, &path](CompanyManagerUI& cm_ui) {
-				std::invoke(set_path, cm_ui, path);
-				return true;
-			})
-		.AddHandler(
-			[saver = &CompanyManagerUI::save_helper,
-			result_handler = &CompanyManagerUI::handle_save_result, &successfully_saved](CompanyManagerUI& cm_ui) {
-				auto result{ std::invoke(saver, cm_ui) };
-				if (result) {
-					successfully_saved = std::invoke(result_handler, cm_ui, *result);
-				}
-				return false;													//Завершаем цепочку вручную, 
-			})																	//чтобы не производить дополнительную проверку в pass_on Worker'a
-		.Assemble()->Process(*this);
-	return successfully_saved;
-}
-
-void CompanyManagerUI::close() {
-	close_helper(WarningMode::Show);											//Предупреждение, если нет открытых документов
-}
-
 bool CompanyManagerUI::close_helper(WarningMode no_loaded) {
 	bool not_cancelled{ true };
 
 	PipelineBuilder()	
 		.AddHandler(
-			[loaded = &CompanyManagerUI::is_loaded, no_loaded,
-			warning = &CompanyManagerUI::not_loaded_msg](CompanyManagerUI& cm_ui) {
-				if (!std::invoke(loaded, cm_ui)) {
+			[this, no_loaded](bool& _) {
+				if (!is_loaded()) {
 					if (no_loaded == WarningMode::Show) {
-						std::invoke(warning, cm_ui);
+						not_loaded_msg();
 					}		
 					return false;
 				}
 				return true;
 			})
 		.AddHandler(															
-			[saved = &CompanyManagerUI::is_saved, 
-			save_request = &CompanyManagerUI::save_before_close_request,
-			get_path = &CompanyManagerUI::get_current_file_path,
-			name_extractor = &CompanyManagerUI::extract_file_name,
-			saver = &CompanyManagerUI::save, &not_cancelled](CompanyManagerUI& cm_ui) {
-				if (!std::invoke(saved, cm_ui)) {
+			[this](bool& not_cancelled) {
+				if (!is_saved()) {
 					QString file_name{
-						std::invoke(name_extractor, cm_ui, std::invoke(get_path, cm_ui))
+						extract_file_name(get_current_file_path())
 					};
-					auto user_answer{
-						std::invoke(
-							save_request, cm_ui, file_name
-						)
-					};
+					auto user_answer{ save_before_close_request(file_name)};
 					switch (user_answer) {
-						case QMessageBox::StandardButton::Save: not_cancelled = std::invoke(saver, cm_ui); break;		//В окне выбора пути операция может быть отменена
+						case QMessageBox::StandardButton::Save: not_cancelled = save(); break;		//В окне выбора пути операция может быть отменена
 						case QMessageBox::StandardButton::Cancel: not_cancelled = false; break;
 					}
 				}
 				return not_cancelled;
 			})
 		.AddHandler(
-			[reset = &CompanyManagerUI::reset_helper](CompanyManagerUI& cm_ui) {
-				std::invoke(reset, cm_ui);
+			[this](bool& _) {
+				reset_helper();
 				return false;
 			})
-		.Assemble()->Process(*this);
+		.Assemble()->Process(not_cancelled);
 	return not_cancelled; 
 }
 
-void CompanyManagerUI::exit() {
-	QWidget::close();
-}
-
-bool CompanyManagerUI::undo() {									//Порядок отмены операций един для команд различных типов
-	bool wrapper_success{ false };
-	PipelineBuilder()
-		.AddHandler(
-			[this, &wrapper_success](CompanyManagerUI&) {
-				auto [_, result] {m_tasks->modify_xml.Cancel()};
-				if (result != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->modify_xml);
-				}
-				else {
-					wrapper_success = true;
-				}
-				return true;									//Попытка изменить данные в TreeModel
-			})
-		.AddHandler(
-			[this, &wrapper_success](CompanyManagerUI&) {
-				auto [_, result] {m_tasks->tree_model.Cancel()};
-				if (result != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->modify_xml);
-					if (wrapper_success) {
-						wrapper_success = false;
-						m_tasks->modify_xml.RepeatWithoutQueueing();		//Если обновление отбражения не удалось, но дерево данных обновлено успешно - отменяем изменения
-					}
-				}
-				return false;									
-			})
-				.Assemble()->Process(*this);
-	update_undo_redo_buttons();
-	update_viewers();
-	return wrapper_success;
-}
-
-bool CompanyManagerUI::redo() {									//Порядок повторного выполнения операций зависит от типа команды
-	bool wrapper_success{ false };
-	bool reversed_order{ *m_tasks->modify_xml.GetLastProcessedPurpose() == command::Purpose::Remove };
-
-	auto redo_in_wrapper_tree{
-		[this, &wrapper_success, reversed_order](CompanyManagerUI&) {
-			auto [_, result] {m_tasks->modify_xml.Repeat()};
-			if (result != task::ResultType::Success) {
-				handle_internal_fatal_error(m_tasks->modify_xml);
-				if (reversed_order) {
-					m_tasks->tree_model.CancelWithoutQueueing();
-				}
-			}
-			else {
-				wrapper_success = true;
-			}
-			return wrapper_success;
-		}
-	};
-	auto redo_in_tree_model{
-		[this, &wrapper_success, reversed_order](CompanyManagerUI&) {
-			auto [_, result] {m_tasks->tree_model.Repeat()};
-			if (result != task::ResultType::Success) {
-				handle_internal_fatal_error(m_tasks->modify_xml);
-				if (wrapper_success) {
-					wrapper_success = false;
-				}
-				if (!reversed_order) {
-					m_tasks->modify_xml.CancelWithoutQueueing();
-				}
-			}
-			else {
-				wrapper_success = true;
-			}
-			return wrapper_success;
-		}
-	};		
-	if (reversed_order) {
-		redo_helper(std::ref(redo_in_tree_model), std::ref(redo_in_wrapper_tree)); //Передаем легкие объекты-"ссылки"
+void CompanyManagerUI::closeEvent(QCloseEvent* event) {
+	if (!close_helper(WarningMode::Hide)) {
+		event->ignore();															//Файл не был сохранён - пользователь отменил операцию
 	}
 	else {
-		redo_helper(std::ref(redo_in_wrapper_tree), std::ref(redo_in_tree_model)); 
+		event->accept();
 	}
-	update_undo_redo_buttons();
-	update_viewers();
-	return wrapper_success;
 }
 
 QMessageBox::StandardButton CompanyManagerUI::show_message(
@@ -458,689 +1041,10 @@ QMessageBox::StandardButton CompanyManagerUI::show_message(
 	);
 }
 
-void CompanyManagerUI::about_program() const {
-	show_message(
-		message::Type::Info,
-		u8"О программе",
-		u8"Company Manager - управление персоналом\n"
-		u8"Обработка данных подразделений и сотрудников\n",
-		QMessageBox::Button::Ok
-	);
-}
-
-void CompanyManagerUI::selection_changed(const QItemSelection& selected, const QItemSelection& deselected) {
-	select_viewer(selected.front().indexes().front());
-}
-
-bool CompanyManagerUI::new_department() {
-	std::pair<wrapper::Company::department_view_it, bool> result_pair{ {}, false };
-
-	QModelIndex current_selection_idx{ get_current_selection_index()};									//Индекс выделенного элемента
-	bool append{																						//Добавление в конец
-		!current_selection_idx.isValid()																//Нет выделенных элементов
-		|| *m_tree_model->GetItemType(current_selection_idx) != CompanyTreeModel::ItemType::Department	//Валидность индекса уже проверена
-		|| current_selection_idx.row() + 1 == m_tree_model->rowCount()									//Последний элемент в списке
-	};
-
-	wrapper::DepartmentBuilder builder;
-	builder.SetAllocator(m_company_manager->GetAllocator());
-	std::optional<wrapper::Department> department;														//Для проверки дубликатов перед вставкой
-
-	PipelineBuilder()
-		.AddHandler(
-			[&builder, &msg_plantation = m_message_factories](CompanyManagerUI& cm_ui) {
-				dialog::NewDepartment new_department_dialog(builder, msg_plantation);					//Диалоговое окно создания поздразделения
-				return new_department_dialog.exec() == QDialog::Accepted;
-			})
-		.AddHandler(
-			[&builder, &department, &company = m_company_manager->Read(),
-			warning = &CompanyManagerUI::already_exists_msg](CompanyManagerUI& cm_ui) {
-				department.emplace(builder.Assemble());
-				if (company.Containts(department->GetName())) {
-					std::invoke(
-						warning, cm_ui,
-						QString(u8"Подразделение \"") + QString::fromStdString(department->GetName()) + u8'\"' //уже сущесвует
-					);
-					return false;
-				}
-				return true;
-			}
-		)
-		.AddHandler(
-			[&result_pair, &department, &current_selection_idx, append,
-			&tree_model = *m_tree_model,
-			adder = &CompanyManagerUI::add_department_helper,
-			inserter = &CompanyManagerUI::insert_department_helper](CompanyManagerUI& cm_ui) {	
-				if (append) {
-					result_pair = std::invoke(adder, cm_ui, std::move(*department));
-				}
-				else {																		
-					result_pair = std::invoke(
-						inserter, cm_ui, std::move(*department),
-						*tree_model.GetDepartmentNameRef(tree_model.GetNextItem(current_selection_idx))
-					);
-				}
-				return result_pair.second;																				//Если success - false, элемент будет удален
-			})																									//из Company
-		.AddHandler(
-				[&result_pair, append, &current_selection_idx,
-				&task_manager = m_tasks->tree_model,
-				&tree_model = *m_tree_model,
-				&company_manager = *m_company_manager,
-				error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyTreeModel>](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::tree_model::InsertDepartment::make_instance(
-							tree_model, company_manager, 
-							result_pair.first->GetName(), 
-							static_cast<size_t>(current_selection_idx.row()) + 1
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					result_pair.second = std::any_cast<bool>(value);
-				}
-				return !result_pair.second;														//Отмена операции и очистка в случае неудачи
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {
-				task_manager.CancelWithoutQueueing();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	update_redo_undo_actions_after_editing();
-	return result_pair.second;
-}
-
-bool CompanyManagerUI::rename_department(const DepartmentViewInfo& view_info, const QString& new_name) {
-	if (new_name.isEmpty()) {
-		empty_field_msg(u8"Наименование");
-		return false;
-	}
-	if (!rename_department_helper(view_info, new_name)) {
-		m_item_viewers.department->RestoreName();												//Возврат исходного значения
-		return false;
-	}
-	reset_redo_queues();
-	update_undo_redo_buttons();
-	return true;
-}
-
-bool CompanyManagerUI::remove_department(const DepartmentViewInfo& view_info) {
-	bool successfully_removed{ false };											//сначала - из TreeModel, потом - из CompanyManager
-	wrapper::string_ref department_name{ extract_department_name(view_info) };
-
-	PipelineBuilder()
-		.AddHandler(
-			[this, &view_info, &department_name](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-					m_tasks->tree_model.Process(
-						command::tree_model::RemoveDepartment::make_instance(
-							*m_tree_model,
-							*m_company_manager,
-							department_name,										//После удаления выделение сместится на другой элемент
-							static_cast<size_t>(view_info.index.row())
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->tree_model);
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[this, &department_name, &successfully_removed](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-					m_tasks->modify_xml.Process(
-						command::xml_wrapper::RemoveDepartment::make_instance(
-							*m_company_manager,
-							department_name
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->modify_xml);
-				}
-				else {
-					successfully_removed = true;
-				}
-				return false;													//Вручную останавливаем движение по цепочке обработчиков
-			})
-		.Assemble()->Process(*this);
-	update_redo_undo_actions_after_editing();
-	return successfully_removed;
-}
-
-bool CompanyManagerUI::new_employee(const DepartmentViewInfo& view_info) {
-	bool successfully_inserted{ false };
-
-	wrapper::EmployeeBuilder builder;
-	builder.SetAllocator(m_company_manager->GetAllocator());
-	std::variant<wrapper::Department::employee_view_it, wrapper::Employee> employee;						//Временное хранилище
-																											//Команда вставки вовращает обычный итератор, а не view
-	PipelineBuilder()
-		.AddHandler(
-			[&builder, &msg_plantation = m_message_factories](CompanyManagerUI& cm_ui) {
-				dialog::NewEmployee new_employee_dialog(builder, msg_plantation);							//Диалоговое окно создания поздразделения
-				return new_employee_dialog.exec() == QDialog::Accepted;
-			})
-		.AddHandler(
-			[&builder, &employee, &view_info,
-			warning = &CompanyManagerUI::already_exists_msg](CompanyManagerUI& cm_ui) {
-				employee.emplace<wrapper::Employee>(builder.Assemble());
-				wrapper::FullNameRef employee_name{ std::get<wrapper::Employee>(employee).GetFullName() };
-
-				if (extract_department(view_info)->Containts(employee_name)) {
-					std::invoke(
-						warning, cm_ui,
-						QString(u8"Сотрудник с ФИО \"") + CompanyTreeModel::FullNameRefToQString(employee_name) + u8'\"'
-					);
-					return false;
-				}			
-				return true;																				
-			})																									//из Company
-		.AddHandler(
-			[&employee, &view_info,
-			&task_manager = m_tasks->modify_xml,
-			&company_manager = *m_company_manager,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::xml_wrapper::InsertEmployee::make_instance(
-							company_manager,
-							extract_department_name(view_info),
-							std::move(std::get<wrapper::Employee>(employee))								//Перемещаем сотрудника в команду
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-					return false;
-				}
-				employee = std::any_cast<wrapper::Department::employee_it>(value);							//Неявное преобразование в employee_view_it
-				return true;														
-			})
-		.AddHandler(
-			[&employee, &view_info,
-			&task_manager = m_tasks->tree_model,
-			&tree_model = *m_tree_model,
-			&company_manager = *m_company_manager,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyTreeModel>](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::tree_model::InsertEmployee::make_instance(
-							tree_model,
-							command::tree_model::WrapperInfo{
-								std::addressof(company_manager.Read()),
-								extract_department_name(view_info)
-							},
-							view_info.index.row(),												//Индекс подразделения
-							std::get<wrapper::Department::employee_view_it>(employee)->second	//Передаем ссылку на вставленный элемент
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-					return false;
-				}
-				return !std::any_cast<bool>(value);
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {					//Отмена операции и очистка в случае неудачи
-				task_manager.CancelWithoutQueueing();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (successfully_inserted) {
-		m_item_viewers.department->UpdateStats();												//Т.к. операция добавления сотрудника выполняется из окна
-	}																							//статистики подразделения, обновляем статистику
-	update_redo_undo_actions_after_editing();
-	return successfully_inserted;
-}
-
-bool CompanyManagerUI::remove_employee(const EmployeeViewInfo& view_info) {		//Удаление необходимо выполнять в обратном порядке:
-	bool successfully_removed{ false };											//сначала - из TreeModel, потом - из CompanyManager
-		
-	PipelineBuilder()
-		.AddHandler(
-			[this, &view_info](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-					m_tasks->tree_model.Process(
-						command::tree_model::RemoveEmployee::make_instance(
-							*m_tree_model,
-							command::tree_model::WrapperInfo{
-								std::addressof(m_company_manager->Read()),
-								extract_department_name(view_info)
-							},
-							view_info.index
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->tree_model); 
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[this, &view_info, &successfully_removed](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-						m_tasks->modify_xml.Process(
-						command::xml_wrapper::RemoveEmployee::make_instance(
-							*m_company_manager,
-							extract_employee_personal_data(view_info)
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					handle_internal_fatal_error(m_tasks->modify_xml);
-				}
-				else {
-					successfully_removed = true;
-				}
-				return false;													//Вручную останавливаем движение по цепочке обработчиков
-			})
-		.Assemble()->Process(*this);
-	update_redo_undo_actions_after_editing();
-	return successfully_removed;
-}
-
-bool CompanyManagerUI::change_employee_surname(const EmployeeViewInfo& view_info, const QString& new_surname) {
-	bool successfully_changed{ false };
-	QString new_full_name;
-
-	PipelineBuilder()
-		.AddHandler(
-			[&new_surname, warning = &CompanyManagerUI::empty_field_msg](CompanyManagerUI& cm_ui) {
-				if (new_surname.isEmpty()) {
-					std::invoke(warning, cm_ui, u8"Фамилия");
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[&view_info, &new_surname, &new_full_name,
-			&company_manager = *m_company_manager,
-			&task_manager = m_tasks->modify_xml,
-			warning = &CompanyManagerUI::warning_if_employee_already_exists,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_changed](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-							task_manager.Process(
-								command::xml_wrapper::ChangeEmployeeSurname::make_instance(
-								company_manager,
-								extract_employee_personal_data(view_info),
-								new_surname.toStdString()
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_changed = std::invoke(
-						warning, cm_ui, std::any_cast<wrapper::RenameResult>(value)
-					);
-				}
-				return successfully_changed;
-			})
-		.AddHandler(
-			[&successfully_changed, &new_full_name, &view_info,
-			rename_helper = &CompanyManagerUI::rename_employee_in_tree_model](CompanyManagerUI& cm_ui) {
-				new_full_name = CompanyTreeModel::FullNameRefToQString(
-					extract_employee_personal_data(view_info).employee_name
-				);																	 //Для обновления отображения после удачого редактирования дерева
-				successfully_changed = std::invoke(rename_helper, cm_ui, view_info, new_full_name);
-				return !successfully_changed;
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {
-				task_manager.CancelWithoutQueueing();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (!successfully_changed) {
-		m_item_viewers.employee->RestoreSurname();
-	}
-	update_redo_undo_actions_after_editing();
-	return successfully_changed;
-}
-
-bool CompanyManagerUI::change_employee_name(const EmployeeViewInfo& view_info, const QString& new_name) {
-	bool successfully_changed{ false };
-	QString new_full_name;
-
-	PipelineBuilder()
-		.AddHandler(
-			[&new_name, warning = &CompanyManagerUI::empty_field_msg](CompanyManagerUI& cm_ui) {
-				if (new_name.isEmpty()) {
-					std::invoke(warning, cm_ui, u8"Имя");
-					return false;
-				}
-				return true;
-			})
-		.AddHandler(
-			[&view_info, &new_name, &new_full_name,
-			&company_manager = *m_company_manager,
-			&task_manager = m_tasks->modify_xml,
-			warning = &CompanyManagerUI::warning_if_employee_already_exists,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_changed](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-							task_manager.Process(
-								command::xml_wrapper::ChangeEmployeeName::make_instance(
-								company_manager,
-								extract_employee_personal_data(view_info),
-								new_name.toStdString()
-						)
-					)	
-				};
-				if (result_type != task::ResultType::Success) {
-				std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_changed = std::invoke(
-						warning, cm_ui, std::any_cast<wrapper::RenameResult>(value)
-					);
-				}
-				return successfully_changed;
-			})
-		.AddHandler(
-			[&successfully_changed, &new_full_name, &view_info,
-			rename_helper = &CompanyManagerUI::rename_employee_in_tree_model](CompanyManagerUI& cm_ui) {
-				new_full_name = CompanyTreeModel::FullNameRefToQString(
-					extract_employee_personal_data(view_info).employee_name
-				);
-				successfully_changed = std::invoke(rename_helper, cm_ui, view_info, new_full_name);
-				return !successfully_changed;
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {
-				task_manager.CancelWithoutQueueing();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (!successfully_changed) {
-		m_item_viewers.employee->RestoreName();
-	}
-	update_redo_undo_actions_after_editing();
-	return successfully_changed;
-}
-
-bool CompanyManagerUI::change_employee_middle_name(const EmployeeViewInfo& view_info, const QString& new_middle_name) {
-	bool successfully_changed{ false };
-	QString new_full_name;
-
-	PipelineBuilder()
-		.AddHandler(
-			[&new_middle_name, empty_field_question = &CompanyManagerUI::empty_optional_field_msg_dlg](CompanyManagerUI& cm_ui) {
-				if (new_middle_name.isEmpty()) {
-					std::invoke(empty_field_question, cm_ui, u8"Отчество");
-					return false;
-			}
-			return true;
-			})
-		.AddHandler(
-			[&view_info, &new_middle_name, &new_full_name,
-			&company_manager = *m_company_manager,
-			&task_manager = m_tasks->modify_xml,
-			warning = &CompanyManagerUI::warning_if_employee_already_exists,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_changed](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-						task_manager.Process(
-							command::xml_wrapper::ChangeEmployeeMiddleName::make_instance(
-							company_manager,
-							extract_employee_personal_data(view_info),
-							new_middle_name.toStdString()
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_changed = std::invoke(
-						warning, cm_ui, std::any_cast<wrapper::RenameResult>(value)
-					);
-				}
-				return successfully_changed;
-			})
-		.AddHandler(
-			[&successfully_changed, &new_full_name, &view_info,
-			rename_helper = &CompanyManagerUI::rename_employee_in_tree_model](CompanyManagerUI& cm_ui) {
-				new_full_name = CompanyTreeModel::FullNameRefToQString(
-					extract_employee_personal_data(view_info).employee_name
-				);
-				successfully_changed = std::invoke(rename_helper, cm_ui, view_info, new_full_name);
-				return !successfully_changed;
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {
-				task_manager.CancelWithoutQueueing();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (!successfully_changed) {
-			m_item_viewers.employee->RestoreMiddleName();
-	}
-	update_redo_undo_actions_after_editing();
-	return successfully_changed;
-}
-
-bool CompanyManagerUI::change_employee_function(const EmployeeViewInfo& view_info, const QString& new_function) {
-	bool successfully_changed{ false };
-
-	PipelineBuilder()
-		.AddHandler(
-			[&new_function, empty_field_question = &CompanyManagerUI::empty_optional_field_msg_dlg](CompanyManagerUI& cm_ui) {
-				if (new_function.isEmpty()) {
-					return std::invoke(empty_field_question, cm_ui, u8"Должность") == QMessageBox::StandardButton::Ok;
-				}
-				return true;
-			})
-		.AddHandler(
-			[&view_info, &new_function,
-			&company_manager = *m_company_manager,
-			&task_manager = m_tasks->modify_xml,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_changed](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-							task_manager.Process(
-							command::xml_wrapper::ChangeEmployeeFunction::make_instance(
-							company_manager,
-							extract_employee_personal_data(view_info),
-							new_function.toStdString()
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_changed = true;
-				}
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (!successfully_changed) {
-		m_item_viewers.employee->RestoreFunction();														//Считывание из дерева и восстановление предыдущего значения
-	}
-	update_redo_undo_actions_after_editing();
-	return successfully_changed;
-}
-
-bool CompanyManagerUI::update_employee_salary(const EmployeeViewInfo& view_info, wrapper::Employee::salary_t new_salary) {
-	bool successfully_updated{ false };
-
-	PipelineBuilder()
-		.AddHandler(
-			[new_salary, zero_salary_question = &CompanyManagerUI::zero_salary_msg_dlg](CompanyManagerUI& cm_ui) {
-				if (!new_salary) {
-					return std::invoke(zero_salary_question, cm_ui) == QMessageBox::StandardButton::Ok;
-				}
-				return true;
-			})
-		.AddHandler(
-			[&view_info, new_salary,
-			&company_manager = *m_company_manager,
-			&task_manager = m_tasks->modify_xml,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_updated](CompanyManagerUI& cm_ui) {
-				auto [_, result_type] {
-					task_manager.Process(
-						command::xml_wrapper::UpdateEmployeeSalary::make_instance(
-							company_manager,
-							extract_employee_personal_data(view_info),
-							new_salary
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_updated = true;
-				}
-				return false;
-			})
-		.Assemble()->Process(*this);
-	if (!successfully_updated) {
-		m_item_viewers.employee->RestoreSalary();														//Повторное считывание из дерева
-	}
-	update_redo_undo_actions_after_editing();
-	return successfully_updated;
-}
-
-
-bool CompanyManagerUI::rename_department_helper(const DepartmentViewInfo& view_info, const QString& new_name) {
-	bool successfully_renamed{ false };
-	wrapper::string_ref old_name(extract_department_name(view_info));
-
-	PipelineBuilder()
-		.AddHandler(
-			[&successfully_renamed, &old_name, &new_name,
-			&task_manager = m_tasks->modify_xml,
-			&company_manager = *m_company_manager,
-			warning = &CompanyManagerUI::warning_if_department_already_exists,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::xml_wrapper::RenameDepartment::make_instance(
-							company_manager, old_name, new_name.toStdString()
-						)
-					)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-					return false;
-				}
-				successfully_renamed = std::invoke(
-					warning, cm_ui, std::any_cast<wrapper::RenameResult>(value)
-				);
-				return successfully_renamed;
-			})
-		.AddHandler(
-			[&new_name, idx = view_info.index.row(),
-			&tree_model = *m_tree_model,  &task_manager = m_tasks->tree_model,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyTreeModel>,
-			&successfully_renamed](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::tree_model::RenameDepartment::make_instance(tree_model, idx, new_name)
-						)
-				};
-				if (result_type != task::ResultType::Success) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					successfully_renamed = std::any_cast<bool>(value);
-				}
-				return !successfully_renamed;
-			})
-		.AddHandler(
-			[&task_manager = m_tasks->modify_xml](CompanyManagerUI& cm_ui) {
-				task_manager.Cancel();
-				return false;
-			})
-		.Assemble()->Process(*this);
-	return successfully_renamed;
-}
-
-bool CompanyManagerUI::rename_employee_in_tree_model(const EmployeeViewInfo& view_info, const QString& new_full_name) {
-	const auto& [q_idx, items] {view_info};
-	auto [new_q_idx, result_type] {
-		m_tasks->tree_model.Process(
-			command::tree_model::ChangeEmployeeFullName::make_instance(
-				*m_tree_model,
-				command::tree_model::EmployeePersonalFile{
-					static_cast<size_t>(q_idx.parent().row()),						//Позиция подразделения и сотрудника
-					static_cast<size_t>(q_idx.row()) 
-				},	
-				new_full_name
-			)
-		)
-	};
-	if (result_type != task::ResultType::Success) {
-		handle_internal_fatal_error(m_tasks->tree_model);
-		return false;
-	}																	//Обновляем индекс в Viewer'e, т.к. выделение сохранилось, а индекс - изменился!
-	m_item_viewers.employee->UpdateModelIndex(
-		std::any_cast<QModelIndex>(new_q_idx)
-	);
-	return true;
-}
-
-bool CompanyManagerUI::warning_if_employee_already_exists(wrapper::RenameResult result) const {
-	if (result == wrapper::RenameResult::IsDuplicate) {
-		already_exists_msg(u8"Сотрудник с таким ФИО");
-		return false;
-	}
-	return true;
-}
-bool CompanyManagerUI::warning_if_department_already_exists(wrapper::RenameResult result) const {
-	if (result == wrapper::RenameResult::IsDuplicate) {
-		already_exists_msg(u8"Подразделение с таким наименованием");
-		return false;
-	}
-	return true;
-}
-
-QModelIndex  CompanyManagerUI::get_current_selection_index() {
-	return m_gui->tree_view->selectionModel()->currentIndex();
-}
-
-const wrapper::Department* CompanyManagerUI::extract_department(const DepartmentViewInfo& view_info) {
-	return std::get<const wrapper::Department*>(view_info.items);
-}
-
-
-wrapper::string_ref CompanyManagerUI::extract_department_name(const DepartmentViewInfo& view_info) {
-	return extract_department(view_info)->GetName();
-}
-
-wrapper::string_ref CompanyManagerUI::extract_department_name(const EmployeeViewInfo& view_info) {
-	const auto& [department_name, _] {view_info.items};
-	return department_name;
-}
-
-CompanyManagerUI::EmployeePersonalFile CompanyManagerUI::extract_employee_personal_data(const EmployeeViewInfo& view_info){
-	const auto& [department_name, employee_it] {view_info.items};
-	return {
-		department_name,
-		employee_it->GetFullName()
-	};
-}
-
-
 void CompanyManagerUI::internal_fatal_error_msg(QString title, const std::string& error_definition) const noexcept {
 	QString text(u8"Произошёл неисправимый сбой\n");
 	text += u8"Системный лог: ";
-	text += error_definition.empty() ? 
+	text += error_definition.empty() ?
 		u8"(пусто)" : error_definition.data();
 	show_message(
 		message::Type::Critical,
@@ -1149,9 +1053,8 @@ void CompanyManagerUI::internal_fatal_error_msg(QString title, const std::string
 	);
 }
 
-QString CompanyManagerUI::extract_file_name(const QString& filename) {
-	m_file_handlers->info.setFile(filename);
-	return m_file_handlers->info.baseName();
+QModelIndex  CompanyManagerUI::get_current_selection_index() {
+	return m_gui->tree_view->selectionModel()->currentIndex();
 }
 
 QMessageBox::StandardButton CompanyManagerUI::save_before_close_request(const QString& file_name) {
@@ -1216,44 +1119,6 @@ int CompanyManagerUI::zero_salary_msg_dlg() const {
 	);
 }
 
-QString CompanyManagerUI::request_load_file_path() {
-	QString path;
-	for (;;) {
-		path = m_file_handlers->dialog.getOpenFileName(
-			this,
-			QObject::tr("Open file"),
-			"",
-			QObject::tr("XML files(*.xml)")
-		);
-		if (path.isEmpty() || is_readable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
-			break;
-		}
-		else {
-			invalid_load_path_msg();
-		}
-	}
-	return path;
-}
-
-QString CompanyManagerUI::request_save_file_path() {
-	QString path;
-	for (;;) {
-		path = m_file_handlers->dialog.getSaveFileName(
-			this,
-			QObject::tr("Open file"),
-			"",
-			QObject::tr("XML files(*.xml)")
-		);							
-		if (path.isEmpty() || is_writable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
-			break;
-		}
-		else {
-			invalid_save_path_msg();
-		}
-	}							
-	return path;
-}
-
 void CompanyManagerUI::not_loaded_msg() const {
 	show_message(
 		message::Type::Warning,
@@ -1285,7 +1150,7 @@ void CompanyManagerUI::unable_to_load_msg() const{
 	show_message(
 		message::Type::Critical,
 		u8"Невозможно открыть файл",
-		u8"Файл недоступен или поврёжден",
+		u8"Файл недоступен для чтения, поврёжден или имеет неверный формат",
 		QMessageBox::Button::Ok
 	);
 }
@@ -1294,7 +1159,7 @@ void CompanyManagerUI::unable_to_save_msg() const {
 	show_message(
 		message::Type::Critical,
 		u8"Невозможно сохранить файл",
-		u8"Файл недоступен или защищён от записи",
+		u8"Файл защищён от записи",
 		QMessageBox::Button::Ok
 	);
 }
@@ -1308,32 +1173,82 @@ void CompanyManagerUI::already_saved_msg() {
 	);
 }
 
-bool CompanyManagerUI::is_readable(const QString& path) const {
-	m_file_handlers->info.setFile(path);
-	return m_file_handlers->info.isReadable();
+bool CompanyManagerUI::warning_if_employee_already_exists(wrapper::RenameResult result) const {
+	if (result == wrapper::RenameResult::IsDuplicate) {
+		already_exists_msg(u8"Сотрудник с таким ФИО");
+		return false;
+	}
+	return true;
 }
 
-bool CompanyManagerUI::is_writable(const QString& path) const {
-	m_file_handlers->info.setFile(path);																//Если файла не существует - он будет создан
-	return !m_file_handlers->info.exists() || m_file_handlers->info.isWritable();						//Иначе - проверка на возможность записи
+bool CompanyManagerUI::warning_if_department_already_exists(wrapper::RenameResult result) const {
+	if (result == wrapper::RenameResult::IsDuplicate) {
+		already_exists_msg(u8"Подразделение с таким наименованием");
+		return false;
+	}
+	return true;
 }
 
-bool CompanyManagerUI::is_loaded() const {
-	return extract_value<bool>(
-		m_tasks->service.Process(command::file_io::CheckLoaded::make_instance(*m_company_manager)).value
-	);
+QString CompanyManagerUI::request_load_file_path() {
+	QString path;
+	for (;;) {
+		path = m_file_handlers->dialog.getOpenFileName(
+			this,
+			QObject::tr("Open file"),
+			"",
+			QObject::tr("XML files(*.xml) ;; All files(*.*) ")
+		);
+		if (path.isEmpty() || is_readable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
+			break;
+		}
+		else {
+			invalid_load_path_msg();
+		}
+	}
+	return path;
 }
 
-bool CompanyManagerUI::is_saved() const {
-	return extract_value<bool>(
-		m_tasks->service.Process(command::file_io::CheckSaved::make_instance(*m_company_manager)).value
-	);
+QString CompanyManagerUI::request_save_file_path() {
+	QString path;
+	for (;;) {
+		path = m_file_handlers->dialog.getSaveFileName(
+			this,
+			QObject::tr("Open file"),
+			"",
+			QObject::tr("XML files(*.xml)")
+		);
+		if (path.isEmpty() || is_writable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
+			break;
+		}
+		else {
+			invalid_save_path_msg();
+		}
+	}
+	return path;
 }
 
 QString CompanyManagerUI::get_current_file_path() {
-	return extract_value<std::string_view>(
+	return std::any_cast<std::string_view>(
 			m_tasks->service.Process(command::file_io::GetPath::make_instance(*m_company_manager)).value
 	).data();
+}
+
+QString CompanyManagerUI::extract_file_name(const QString& path) {
+	m_file_handlers->info.setFile(path);
+	return m_file_handlers->info.baseName();
+}
+
+
+bool CompanyManagerUI::is_loaded() const {
+	return std::any_cast<bool>(
+		m_tasks->service.Process(command::file_io::CheckLoaded::make_instance(*m_company_manager)).value
+		);
+}
+
+bool CompanyManagerUI::is_saved() const {
+	return std::any_cast<bool>(
+		m_tasks->service.Process(command::file_io::CheckSaved::make_instance(*m_company_manager)).value
+		);
 }
 
 void CompanyManagerUI::set_file_path(const QString& path) {
@@ -1342,17 +1257,14 @@ void CompanyManagerUI::set_file_path(const QString& path) {
 	);
 }
 
-std::optional<worker::file_operation::Result> CompanyManagerUI::save_helper() {
-	auto [value, result_type] {
-			m_tasks->service.Process(
-				command::file_io::Save::make_instance(*m_company_manager)
-		)
-	};
-	if (result_type != task::ResultType::Success) {
-		handle_internal_fatal_error(m_tasks->service);
-		return std::nullopt;
-	}
-	return extract_value<worker::file_operation::Result>(value);
+bool CompanyManagerUI::is_readable(const QString& path) const {
+	m_file_handlers->info.setFile(path);
+	return m_file_handlers->info.isReadable();
+}
+
+bool CompanyManagerUI::is_writable(const QString& path) const {
+	m_file_handlers->info.setFile(path);																//Если файла не существует - он будет создан
+	return !m_file_handlers->info.exists() || m_file_handlers->info.isWritable();						//Иначе - проверка на возможность записи
 }
 
 bool CompanyManagerUI::create_helper() {
@@ -1375,10 +1287,9 @@ std::optional<worker::file_operation::Result> CompanyManagerUI::load_helper() {
 		)
 	};
 	if (result_type != task::ResultType::Success) {
-		handle_internal_fatal_error(m_tasks->service);
-		return std::nullopt;
+		return std::nullopt;											//Сообщение об ошибке выведет вызывающий объект
 	}
-	return extract_value<worker::file_operation::Result>(value);
+	return std::any_cast<worker::file_operation::Result>(value);
 }
 
 bool CompanyManagerUI::handle_load_result(worker::file_operation::Result result) {
@@ -1390,6 +1301,18 @@ bool CompanyManagerUI::handle_load_result(worker::file_operation::Result result)
 	};
 }
 
+std::optional<worker::file_operation::Result> CompanyManagerUI::save_helper() {
+	auto [value, result_type] {
+		m_tasks->service.Process(
+			command::file_io::Save::make_instance(*m_company_manager)
+		)
+	};
+	if (result_type != task::ResultType::Success) {
+		return std::nullopt;											//Сообщение об ошибке выведет вызывающий объект
+	}
+	return std::any_cast<worker::file_operation::Result>(value);
+}
+
 bool CompanyManagerUI::handle_save_result(worker::file_operation::Result result) {
 	using worker::file_operation::Result;
 	switch (result) {
@@ -1399,76 +1322,136 @@ bool CompanyManagerUI::handle_save_result(worker::file_operation::Result result)
 	};
 }
 
-std::pair<wrapper::Company::department_view_it, bool> CompanyManagerUI::add_department_helper(wrapper::Department&& department) {
-	bool successfully_added{ false };
-	wrapper::Company::department_it added;
-
-	PipelineBuilder()
-		.AddHandler(
-			[&department, &task_manager = m_tasks->modify_xml,
-			&company_manager = *m_company_manager,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&added , &successfully_added](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::xml_wrapper::AddDepartment::make_instance(company_manager, std::move(department))
-					)
-				};
-				successfully_added = (result_type == task::ResultType::Success);						//Вычисление логического выражения
-				if (!successfully_added) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					added = std::any_cast<wrapper::Company::department_it>(value);
-				}
-				return successfully_added;
-			})
-		.Assemble()->Process(*this);
-	return { added, successfully_added };
+std::optional<CompanyManagerUI::Company::department_view_it> CompanyManagerUI::add_department_helper(Department&& department) {
+	auto [value, result_type] {
+		m_tasks->modify_xml.Process(
+			command::xml_wrapper::AddDepartment::make_instance(
+				*m_company_manager, 
+				std::move(department)
+			)
+		)
+	};
+	if (result_type != task::ResultType::Success) {
+		handle_internal_fatal_error(m_tasks->modify_xml);
+		return std::nullopt;
+	}
+	return std::any_cast<Company::department_it>(value);
 }
 
-std::pair<wrapper::Company::department_view_it, bool> CompanyManagerUI::insert_department_helper(wrapper::Department&& department, wrapper::string_ref before) {
-	bool successfully_inserted{ false };
-	wrapper::Company::department_it inserted;
-
-	PipelineBuilder()
-		.AddHandler(
-			[&department, &before, &task_manager = m_tasks->modify_xml,
-			&company_manager = *m_company_manager,
-			error_handler = &CompanyManagerUI::handle_internal_fatal_error<CompanyManager>,
-			&successfully_inserted, &inserted](CompanyManagerUI& cm_ui) {
-				auto [value, result_type] {
-					task_manager.Process(
-						command::xml_wrapper::InsertDepartment::make_instance(company_manager, before, std::move(department))
-					)
-				};
-				successfully_inserted = (result_type == task::ResultType::Success);						//Вычисление логического выражения
-				if (!successfully_inserted) {
-					std::invoke(error_handler, cm_ui, task_manager);
-				}
-				else {
-					inserted = std::any_cast<wrapper::Company::department_it>(value);
-				}
-				return successfully_inserted;
-			})
-		.Assemble()->Process(*this);
-	return { inserted, successfully_inserted };
+std::optional<CompanyManagerUI::Company::department_view_it> CompanyManagerUI::insert_department_helper(Department&& department, wrapper::string_ref before) {
+	auto [value, result_type] {
+		m_tasks->modify_xml.Process(
+			command::xml_wrapper::InsertDepartment::make_instance(
+				*m_company_manager, 
+				before, 
+				std::move(department)
+			)
+		)
+	};
+	if (result_type != task::ResultType::Success) {
+		handle_internal_fatal_error(m_tasks->modify_xml);
+		return std::nullopt;
+	}
+	return std::any_cast<Company::department_it>(value);
 }
 
-void CompanyManagerUI::closeEvent(QCloseEvent* event) {
+bool CompanyManagerUI::rename_department_helper(const DepartmentViewInfo& view_info, const QString& new_name) {
+	bool successfully_renamed{ false };
+	wrapper::string_ref old_name(extract_department_name(view_info));
+
+	auto arg_tuple{ std::tie(view_info, old_name, new_name) };
+
 	PipelineBuilder()
 		.AddHandler(
-			[close = &CompanyManagerUI::close_helper, event](CompanyManagerUI& cm_ui) {
-				if (!std::invoke(close, cm_ui, WarningMode::Hide)) {
-					event->ignore();														//Файл не был сохранён - пользователь отменил операцию
+			[this, &arg_tuple](bool& successfully_renamed) {
+				auto& [view_info, old_name, new_name] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->modify_xml.Process(
+						command::xml_wrapper::RenameDepartment::make_instance(
+							*m_company_manager,
+							old_name,
+							new_name.toStdString()
+						)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->modify_xml);
 					return false;
 				}
-				return true;
+				successfully_renamed = warning_if_department_already_exists(
+					std::any_cast<wrapper::RenameResult>(value)
+				);
+				return successfully_renamed;
 			})
 		.AddHandler(
-			[event](CompanyManagerUI& cm_ui) {
-				event->accept();
+			[this, &arg_tuple](bool& successfully_renamed) {
+				auto& [view_info, old_name, new_name] {arg_tuple};
+				auto [value, result_type] {
+					m_tasks->tree_model.Process(
+						command::tree_model::RenameDepartment::make_instance(
+							*m_tree_model,
+							view_info.index.row(),
+							new_name)
+					)
+				};
+				if (result_type != task::ResultType::Success) {
+					handle_internal_fatal_error(m_tasks->tree_model);
+				}
+				else {
+					successfully_renamed = std::any_cast<bool>(value);
+				}
+				return !successfully_renamed;
+			})
+		.AddHandler(
+			[&task_manager = m_tasks->modify_xml](bool& _) {
+				task_manager.Cancel();
 				return false;
 			})
-		.Assemble()->Process(*this);
+		.Assemble()->Process(successfully_renamed);
+	return successfully_renamed;
+}
+
+bool CompanyManagerUI::rename_employee_in_tree_model(const EmployeeViewInfo& view_info, const QString& new_full_name) {
+	const auto& [q_idx, items] {view_info};
+	auto [new_q_idx, result_type] {
+		m_tasks->tree_model.Process(
+			command::tree_model::ChangeEmployeeFullName::make_instance(
+				*m_tree_model,
+				command::tree_model::EmployeePersonalFile{
+					static_cast<size_t>(q_idx.parent().row()),						//Позиция подразделения и сотрудника
+					static_cast<size_t>(q_idx.row())
+				},
+				new_full_name
+			)
+		)
+	};
+	if (result_type != task::ResultType::Success) {
+		handle_internal_fatal_error(m_tasks->tree_model);
+		return false;
+	}																	//Обновляем индекс в Viewer'e, т.к. выделение сохранилось, а индекс - изменился!
+	m_item_viewers.employee->UpdateModelIndex(
+		std::any_cast<QModelIndex>(new_q_idx)
+	);
+	return true;
+}
+
+const CompanyManagerUI::Department* CompanyManagerUI::extract_department_ptr(const DepartmentViewInfo& view_info) {
+	return std::get<const Department*>(view_info.items);
+}
+
+wrapper::string_ref CompanyManagerUI::extract_department_name(const DepartmentViewInfo& view_info) {
+	return extract_department_ptr(view_info)->GetName();
+}
+
+wrapper::string_ref CompanyManagerUI::extract_department_name(const EmployeeViewInfo& view_info) {
+	const auto& [department_name, _] {view_info.items};
+	return department_name;
+}
+
+CompanyManagerUI::EmployeePersonalFile CompanyManagerUI::extract_employee_personal_data(const EmployeeViewInfo& view_info) {
+	const auto& [department_name, employee_it] {view_info.items};
+	return {
+		department_name,
+		employee_it->GetFullName()
+	};
 }

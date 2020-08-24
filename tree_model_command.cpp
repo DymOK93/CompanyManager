@@ -12,7 +12,7 @@ namespace command {
 		}
 
 		std::any InsertDepartment::Execute() {
-			auto& tree_model{ MyBase::get_target() };
+			auto& tree_model{ get_target() };
 			QModelIndex q_idx{
 				tree_model.InsertDepartmentItem(
 					get_company().at(
@@ -25,7 +25,7 @@ namespace command {
 		}
 
 		std::any InsertDepartment::Cancel() {
-			auto& tree_model{ MyBase::get_target() };
+			auto& tree_model{ get_target() };
 			return tree_model.RemoveDepartmentItem(get_department_position());
 		}
 
@@ -53,7 +53,7 @@ namespace command {
 		}
 
 		std::any RenameDepartment::Execute() {
-			auto& tree_model{ MyBase::get_target() };
+			auto& tree_model{ get_target() };
 			QModelIndex q_idx{ tree_model.DepartmentIndex(m_pos) };
 			auto old_name{ tree_model.ExchangeItemName(q_idx, m_name) };		//ѕользуемс€ преимуществами CoW
 			if (!old_name) {
@@ -89,15 +89,16 @@ namespace command {
 		}
 
 		std::any RemoveDepartment::Execute() {
-			return MyBase::get_target().RemoveDepartmentItem(
+			m_branch = get_target().DumpDepartmentItem(
 				get_department_position()
 			);
+			return make_default_value();
 		}
 
 		std::any RemoveDepartment::Cancel() {
-			return MyBase::get_target().InsertDepartmentItem(
-				get_company().at(get_department_name()),
-				get_department_position()
+			return get_target().RestoreDepartmentItem(
+				std::move(*m_branch),
+				std::addressof(get_company().at(get_department_name()))
 			);
 		}
 
@@ -125,8 +126,8 @@ namespace command {
 
 
 		std::any ChangeEmployeeFullName::Execute() {
-			auto& tree_model(MyBase::get_target());
-			QModelIndex department_idx(MyBase::get_department_index());
+			auto& tree_model(get_target());
+			QModelIndex department_idx(get_department_index());
 			if (!m_employee_cached_insert_pos) {										//ѕоиск позиции дл€ вставки
 				m_employee_cached_insert_pos = upper_bound_by_full_name(department_idx, m_full_name);
 			}
@@ -181,7 +182,7 @@ namespace command {
 		}
 		
 		std::any InsertEmployee::Execute() {
-			auto& tree_model{ MyBase::get_target() };
+			auto& tree_model{ get_target() };
 			const Employee* emp_ptr;
 			if (m_employee_ptr) {					//’ранить указатель после первого выполнени€ Execute() нельз€, т.к. после отмены операции при последующем повторе
 				emp_ptr = m_employee_ptr;			//элемент будет заново вставлен в XML-дерево
@@ -189,15 +190,15 @@ namespace command {
 				m_employee_ptr = nullptr;
 			}
 			else {
-				emp_ptr = MyBase::get_employee_ptr(
-					MyBase::get_full_name()
+				emp_ptr = get_employee_ptr(
+					get_full_name()
 				);
 			}	
-			QModelIndex department_q_idx{ MyBase::get_department_index() };
+			QModelIndex department_q_idx{ get_department_index() };
 			m_personal_info.employee_pos = MyBase::upper_bound_by_full_name(
 							department_q_idx,
 							CompanyTreeModel::FullNameRefToQString(
-							MyBase::get_full_name()
+							get_full_name()
 					)
 			);
 			return tree_model.InsertEmployeeItem(
@@ -208,8 +209,8 @@ namespace command {
 		}
 
 		std::any InsertEmployee::Cancel() {
-			return MyBase::get_target().RemoveEmployeeItem(				
-				MyBase::get_department_index(),
+			return get_target().RemoveEmployeeItem(				
+				get_department_index(),
 				m_personal_info.employee_pos
 			);								
 		}
@@ -242,31 +243,31 @@ namespace command {
 		}
 			
 		std::any RemoveEmployee::Execute() {									
-			QModelIndex department_q_idx{ MyBase::get_department_index() };
+			QModelIndex department_q_idx{ get_department_index() };
 			if (!m_employee_name) {				
 				QModelIndex employee_q_idx{
-				MyBase::get_target().EmployeeIndex(
+				get_target().EmployeeIndex(
 					department_q_idx,
 					m_personal_info.employee_pos
 				)
 			};		
 				m_employee_name = std::get<const Employee*>(					//Ќа момент выполнени€ Execute() элемент модели и указатель еще валидны, 
-						MyBase::get_target().GetItemNode(employee_q_idx)		//поскольку удаление из дерева данных выполн€етс€ позже
+						get_target().GetItemNode(employee_q_idx)		//поскольку удаление из дерева данных выполн€етс€ позже
 					)->GetFullName();
 			}
-			return MyBase::get_target().RemoveEmployeeItem(						
+			m_branch = get_target().DumpEmployeeItem(						
 				department_q_idx,
 				m_personal_info.employee_pos
 			);
+			 return make_default_value();
 		}
 
 		std::any RemoveEmployee::Cancel() {										//ƒл€ Remove-операций восстановление в дереве данных должно производитьс€ раньше
-			auto& tree_model{ MyBase::get_target() };							//восстановлени€ в модели, чтобы можно было извлечь необходимые сведени€
-			const Employee* emp_ptr{ MyBase::get_employee_ptr(get_full_name()) };
-			return tree_model.InsertEmployeeItem(
-				*emp_ptr,
-				tree_model.DepartmentIndex(m_personal_info.department_pos),
-				m_personal_info.employee_pos
+			auto& tree_model{ get_target() };							//восстановлени€ в модели, чтобы можно было извлечь необходимые сведени€
+			const Employee* emp_ptr{ get_employee_ptr(get_full_name()) };
+			return tree_model.RestoreEmployeeItem(
+				std::move(*m_branch),
+				emp_ptr
 			);
 		}
 

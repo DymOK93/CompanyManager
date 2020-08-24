@@ -16,10 +16,10 @@ namespace command {
 			using MyBase::MyBase;
 		protected:
 			wrapper::Company* get_tree_ptr() {									//При отсутствии открытого документа Modify() выбросит исключение
-				return std::addressof(MyBase::get_target().Modify());
+				return std::addressof(get_target().Modify());
 			}
 			wrapper::Company& get_tree_ref() {
-				return MyBase::get_target().Modify();
+				return get_target().Modify();
 			}
 		};
 
@@ -177,7 +177,7 @@ namespace command {
 				return m_employee.employee_name;
 			}
 			wrapper::Department& get_department() {
-				return MyBase::get_tree_ref().at(m_employee.department_name);
+				return get_tree_ref().at(m_employee.department_name);
 			}
 			wrapper::Employee& get_employee() {
 				return get_department().at(get_full_name());
@@ -271,7 +271,7 @@ namespace command {
 			}
 		protected:
 			wrapper::Department& get_department() {
-				return MyBase::get_tree_ref().at(m_department);
+				return get_tree_ref().at(m_department);
 			}
 		protected:
 			wrapper::string_ref m_department;

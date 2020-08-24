@@ -12,7 +12,7 @@ DepartmentView::DepartmentView(QWidget* parent)
 }
 
 void DepartmentView::erased_transmitter() {
-	emit erased(MyBase::get_view());							
+	emit erased(get_view());							
 }
 
 void DepartmentView::UpdateView() {
@@ -23,12 +23,12 @@ void DepartmentView::UpdateView() {
 
 void DepartmentView::RestoreName() {
 	m_gui->name_lnedit->setText(
-		QString::fromStdString(MyBase::get_item<const wrapper::Department*>()->GetName())
+		QString::fromStdString(get_item<const wrapper::Department*>()->GetName())
 	);
 }
 
 void DepartmentView::UpdateStats() {
-	auto& department_it{ MyBase::get_item<const wrapper::Department*>() };				//Запрос статистики подразделения
+	auto& department_it{ get_item<const wrapper::Department*>() };				//Запрос статистики подразделения
 	m_gui->employee_count_lnedit->setText(
 		QString::number(department_it->EmployeeCount())
 	);
@@ -45,11 +45,11 @@ void DepartmentView::view_mode(int mode) {
 }
 
 void DepartmentView::name_changed_transmitter() {
-	emit name_changed(MyBase::get_view(), m_gui->name_lnedit->text());
+	emit name_changed(get_view(), m_gui->name_lnedit->text());
 }
 
 void DepartmentView::employee_added_transmitter() {
-	emit employee_added(MyBase::get_view());
+	emit employee_added(get_view());
 }
 
 DepartmentView& DepartmentView::SetDepartment(const view_info& department) {
@@ -136,71 +136,71 @@ void EmployeeView::UpdateView() {
 
 void EmployeeView::RestoreSurname() {
 	m_gui->surname_lnedit->setText(
-		QString::fromStdString(MyBase::get_item<const wrapper::Employee*>()->GetSurname().get().data())
+		QString::fromStdString(get_item<const wrapper::Employee*>()->GetSurname().get().data())
 	);
 }
 
 void EmployeeView::RestoreName() {
 	m_gui->name_lnedit->setText(
-		QString::fromStdString(MyBase::get_item<const wrapper::Employee*>()->GetName().get().data())
+		QString::fromStdString(get_item<const wrapper::Employee*>()->GetName().get().data())
 	);
 }
 
 void EmployeeView::RestoreMiddleName() {
 	m_gui->middle_name_lnedit->setText(
-		QString::fromStdString(MyBase::get_item<const wrapper::Employee*>()->GetMiddleName().get().data())
+		QString::fromStdString(get_item<const wrapper::Employee*>()->GetMiddleName().get().data())
 	);
 }
 
 void EmployeeView::RestoreFunction() {
 	m_gui->function_lnedit->setText(
-		QString::fromStdString(MyBase::get_item<const wrapper::Employee*>()->GetFunction().get().data())
+		QString::fromStdString(get_item<const wrapper::Employee*>()->GetFunction().get().data())
 	);
 }
 
 void EmployeeView::RestoreSalary() {
 	m_gui->salary_lnedit->setText(
-		QString::number(MyBase::get_item<const wrapper::Employee*>()->GetSalary())
+		QString::number(get_item<const wrapper::Employee*>()->GetSalary())
 	);
 }
 
 void EmployeeView::surname_changed_transmitter() {
 	emit surname_changed(
-		MyBase::get_view(),
+		get_view(),
 		m_gui->surname_lnedit->text()
 	);
 }
 
 void EmployeeView::name_changed_transmitter() {
 	emit name_changed(
-		MyBase::get_view(),
+		get_view(),
 		m_gui->name_lnedit->text()
 	);
 }
 
 void EmployeeView::middle_name_changed_transmitter() {
 	emit middle_name_changed(
-		MyBase::get_view(),
+		get_view(),
 		m_gui->middle_name_lnedit->text()
 	);
 }
 
 void EmployeeView::function_changed_transmitter() {
 	emit function_changed(
-		MyBase::get_view(),
+		get_view(),
 		m_gui->function_lnedit->text()
 	);
 }
 
 void EmployeeView::salary_updated_transmitter() {
 	emit salary_updated(
-		MyBase::get_view(),
+		get_view(),
 		static_cast<wrapper::Employee::salary_t>(m_gui->salary_lnedit->text().toInt())
 	);
 }
 
 void EmployeeView::erased_transmitter() {
-	emit erased(MyBase::get_view());
+	emit erased(get_view());
 }
 
 

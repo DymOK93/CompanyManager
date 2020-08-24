@@ -83,7 +83,7 @@ namespace command {
 				get_tree_ref()
 					.InsertDepartment(
 						m_before,
-						move(MyBase::get_wrapper())
+						move(get_wrapper())
 				)
 			};
 			m_value.emplace<wrapper::string_ref>(it->GetName());			//—охран€ем название подразделени€
@@ -93,7 +93,7 @@ namespace command {
 		any InsertDepartment::Cancel() {
 			m_value = get_tree_ref()
 				.ExtractDepartment(
-					MyBase::get_substitute()
+					get_substitute()
 				);
 			return make_default_value();
 		}
@@ -124,8 +124,8 @@ namespace command {
 			if (next) {
 				m_before = next->GetName();									//≈сли удал€емое - не последнее, сохран€ем им€ следующего
 			}
-			m_value = MyBase::get_tree_ref().ExtractDepartment(
-				MyBase::get_substitute()
+			m_value = get_tree_ref().ExtractDepartment(
+				get_substitute()
 			);
 			return make_default_value();
 		}
@@ -158,11 +158,11 @@ namespace command {
 		}
 
 		any ChangeEmployeeSurname::Execute() {
-			auto& employee{ MyBase::get_employee() };					
+			auto& employee{ get_employee() };					
 			string old_surname(employee.GetSurname());
 			wrapper::RenameResult result{
-				MyBase::get_department().ChangeEmployeeSurname(
-					MyBase::get_full_name(),
+				get_department().ChangeEmployeeSurname(
+					get_full_name(),
 					move(m_value)
 				)
 			};
@@ -175,11 +175,11 @@ namespace command {
 		}
 
 		any ChangeEmployeeName::Execute() {
-			auto& employee{ MyBase::get_employee() };
+			auto& employee{ get_employee() };
 			string old_name(employee.GetName());
 			wrapper::RenameResult result{
-				MyBase::get_department().ChangeEmployeeName(
-					MyBase::get_full_name(),
+				get_department().ChangeEmployeeName(
+					get_full_name(),
 					move(m_value)
 				)
 			};
@@ -192,11 +192,11 @@ namespace command {
 		}
 
 		any ChangeEmployeeMiddleName::Execute() {
-			auto& employee{ MyBase::get_employee() };
+			auto& employee{ get_employee() };
 			string old_middle_name(employee.GetMiddleName());
 			wrapper::RenameResult result{
-				MyBase::get_department().ChangeEmployeeMiddleName(
-					MyBase::get_full_name(),
+				get_department().ChangeEmployeeMiddleName(
+					get_full_name(),
 					move(m_value)
 				)
 			};
@@ -209,7 +209,7 @@ namespace command {
 		}
 
 		any ChangeEmployeeFunction::Execute() {
-			auto& employee{ MyBase::get_employee() };
+			auto& employee{ get_employee() };
 			string old_function(employee.GetFunction());
 			employee.SetFunction(move(m_value));
 			m_value = move(old_function);
@@ -221,9 +221,9 @@ namespace command {
 		}
 
 		any UpdateEmployeeSalary::Execute() {
-			salary_t previous_value{ MyBase::get_employee().GetSalary() };
-			MyBase::get_department().UpdateEmployeeSalary(
-				MyBase::get_full_name(), MyBase::get_value()
+			salary_t previous_value{ get_employee().GetSalary() };
+			get_department().UpdateEmployeeSalary(
+				get_full_name(), get_value()
 			);
 			m_value = previous_value;
 			return previous_value;
@@ -243,8 +243,8 @@ namespace command {
 
 		any InsertEmployee::Execute() {
 			auto it{
-				MyBase::get_department().InsertEmployee(
-					std::move(MyBase::get_wrapper())
+				get_department().InsertEmployee(
+					std::move(get_wrapper())
 				)
 			};
 			m_value = it->first;													//FullNameRef
@@ -252,8 +252,8 @@ namespace command {
 		}
 
 		any InsertEmployee::Cancel() {
-			m_value = MyBase::get_department().ExtractEmployee(
-				MyBase::get_substitute()
+			m_value = get_department().ExtractEmployee(
+				get_substitute()
 			);
 			return make_default_value();
 		}
@@ -278,16 +278,16 @@ namespace command {
 		}
 
 		any RemoveEmployee::Execute() {
-			m_value = MyBase::get_department().ExtractEmployee(
-				MyBase::get_substitute()
+			m_value = get_department().ExtractEmployee(
+				get_substitute()
 			);
 			return make_default_value();
 		}
 
 		any RemoveEmployee::Cancel() {
 			auto it{
-				MyBase::get_department().InsertEmployee(
-					std::move(MyBase::get_wrapper())
+				get_department().InsertEmployee(
+					std::move(get_wrapper())
 				)
 			};
 			m_value = it->first;													//FullNameRef

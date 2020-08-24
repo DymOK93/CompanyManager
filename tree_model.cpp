@@ -224,6 +224,42 @@ bool CompanyTreeModel::RemoveDepartmentItem(size_t pos) {
     return success;
 }
 
+CompanyTreeModel::Memento CompanyTreeModel::DumpDepartmentItem(size_t pos) {
+    if (!m_root_item || pos > m_root_item->childCount()) {
+        return Memento();
+    }
+    auto& company{ *m_root_item };
+    Memento::Dump dump{
+        pos,
+        std::nullopt,
+        std::move(company[pos])
+    };
+    beginRemoveRows(QModelIndex(), static_cast<int>(pos), static_cast<int>(pos));
+    company.removeChild(pos);
+    endRemoveRows();
+    return std::move(dump);
+}
+
+bool CompanyTreeModel::RestoreDepartmentItem(Memento&& item, const Department* new_node) {
+    Memento::Dump department_dump(item.Extract());
+    if (new_node) {
+        department_dump.branch->SetWrapperNode(new_node);
+    }
+    beginInsertRows(
+        QModelIndex(),                                              //root index
+        static_cast<int>(department_dump.pos),
+        static_cast<int>(department_dump.pos)
+    );
+    bool success{
+        m_root_item->insertChild(
+             std::move(department_dump.branch),
+             department_dump.pos
+        )
+    };
+    endInsertRows();
+    return success;
+}
+
 QModelIndex CompanyTreeModel::InsertEmployeeItem(const Employee& source, const QModelIndex& department, size_t pos) {
     auto* item{ get_item(department) };
     if (!item
@@ -261,6 +297,50 @@ bool CompanyTreeModel::RemoveEmployeeItem(const QModelIndex& department, size_t 
     endRemoveRows();
     return success;
 }
+
+CompanyTreeModel::Memento CompanyTreeModel::DumpEmployeeItem(const QModelIndex& department, size_t pos) {
+    auto* item{ get_item(department) };
+    if (!item
+        || item->GetType() != ItemType::Department          //Родительский узел - подразделение
+        || pos >= item->childCount()) {
+        return Memento();
+    }
+    Memento::Dump dump{
+        pos,
+        item->childNumber(),
+        std::move((*item)[pos])
+    };
+    beginRemoveRows(department, static_cast<int>(pos), static_cast<int>(pos));
+    item->removeChild(pos);
+    endRemoveRows();
+    return std::move(dump);                                     //Перемещаем в конструктор Memento
+}
+
+bool CompanyTreeModel::RestoreEmployeeItem(Memento&& item, const Employee* new_node) {
+    Memento::Dump employee_dump(item.Extract());
+    if (new_node) {
+        employee_dump.branch->SetWrapperNode(new_node);
+    }
+    QModelIndex department_q_idx{ DepartmentIndex(employee_dump.parent_pos.value()) };
+    auto* department{ get_item(department_q_idx) };
+    if (!department) {
+        return false;
+    }
+    beginInsertRows(
+        department_q_idx,
+        static_cast<int>(employee_dump.pos),
+        static_cast<int>(employee_dump.pos)
+    );
+    bool success{
+        department->insertChild(
+             std::move(employee_dump.branch),
+             employee_dump.pos
+        )
+    };
+    endInsertRows();
+    return success;
+}
+
 
 CompanyTreeModel::tree_item_holder CompanyTreeModel::build_company_tree(const wrapper::Company& company) {
     tree_item_holder root_item{

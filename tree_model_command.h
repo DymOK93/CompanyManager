@@ -111,7 +111,7 @@ namespace command {
 				wrapper::string_ref department_name,							//Для обновления указателя на подразделение
 				size_t pos
 			) noexcept;
-			std::any Execute() override;										//return type: bool
+			std::any Execute() override;										//return type: empty std::any
 			std::any Cancel() override;											//return type: bool
 			Type GetType() const noexcept override;
 			static command_holder make_instance(
@@ -120,6 +120,8 @@ namespace command {
 				wrapper::string_ref department_name,
 				size_t pos
 			);
+		private:
+			std::optional<CompanyTreeModel::Memento> m_branch;
 		};
 
 		struct EmployeePersonalFile {
@@ -140,12 +142,12 @@ namespace command {
 			}
 		protected:
 			QModelIndex get_department_index() const {
-				return MyBase::get_target().DepartmentIndex(m_personal_info.department_pos);
+				return get_target().DepartmentIndex(m_personal_info.department_pos);
 			}
 			size_t upper_bound_by_full_name(
 				const QModelIndex& department, const QString& full_name
 			) const {
-				return *MyBase::get_target().UpperBoundChild(full_name, department);			//Поиск позиции для вставки сотрудника
+				return *get_target().UpperBoundChild(full_name, department);			//Поиск позиции для вставки сотрудника
 			}
 		protected:
 			EmployeePersonalFile m_personal_info;
@@ -240,7 +242,7 @@ namespace command {
 				const WrapperInfo& wrapper_info,
 				const QModelIndex& employee_q_idx								//Из модельного индекса извлечём данные для EmployeePersonalFile
 			) noexcept;
-			std::any Execute() override;										//return type: bool
+			std::any Execute() override;										//return type: empty std::any
 			std::any Cancel() override;											//return type: bool
 			Type GetType() const noexcept override;
 			static command_holder make_instance(
@@ -250,6 +252,8 @@ namespace command {
 			);
 		protected:
 			size_t get_department_position_from_employee(const QModelIndex& employee_q_idx);
+		private:
+			std::optional<CompanyTreeModel::Memento> m_branch;
 		};
 	}
 }

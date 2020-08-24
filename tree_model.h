@@ -26,6 +26,35 @@ public:
     using Company = wrapper::Company;
     using Department = wrapper::Department;
     using Employee = wrapper::Employee;
+    
+/************************************************************
+Класс Memnto хранит ветвь
+и позволяет её извлекать и вставлять без полной пересборки.
+***********************************************************/
+    class Memento {
+    public:
+        bool IsValid() const noexcept {
+            return m_dump.has_value();
+        }
+    private:
+        struct Dump {
+            size_t pos;
+            std::optional<size_t> parent_pos;                   //Только для Employee
+            tree_item_holder branch;
+        };
+
+        friend class CompanyTreeModel;
+        Memento() = default;
+        Memento(Dump dump)
+            : m_dump(std::move(dump))
+        {
+        }
+        Dump Extract() {
+            return std::move(*m_dump);                          //Строго для внутреннего использования
+        }
+    private:
+        std::optional<Dump> m_dump;
+    };
 public:
     CompanyTreeModel() = default;
     CompanyTreeModel(const CompanyManager& cm, QObject* parent = nullptr);
@@ -71,9 +100,14 @@ public:
 
     QModelIndex InsertDepartmentItem(const Department& source, size_t pos);
     bool RemoveDepartmentItem(size_t pos);
+    Memento DumpDepartmentItem(size_t pos);
+    bool RestoreDepartmentItem(Memento&& item, const Department* new_node = nullptr);
 
     QModelIndex InsertEmployeeItem(const Employee& source, const QModelIndex& department, size_t pos);
-    bool RemoveEmployeeItem(const QModelIndex& department, size_t pos);                    //Если узел изменён
+    bool RemoveEmployeeItem(const QModelIndex& department, size_t pos);                    
+    Memento DumpEmployeeItem(const QModelIndex& department, size_t pos);
+    bool RestoreEmployeeItem(Memento&& item, const Employee* new_node = nullptr);                       //Если узел изменён
+
 
     static QString FullNameRefToQString(const wrapper::FullNameRef& name);
 private:

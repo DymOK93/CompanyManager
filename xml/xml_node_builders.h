@@ -44,7 +44,7 @@ namespace xml {
 		}
 
 		node_holder Build() {
-            allocator_holder alloc{ MyBase::get_allocator() };
+            allocator_holder alloc{ get_allocator() };
 			return make_node_holder(
 				alloc,
 				Node::Header{ m_name, m_attrs },

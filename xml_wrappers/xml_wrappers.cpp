@@ -30,13 +30,13 @@ namespace wrapper {
 	XmlWrapper& XmlWrapper::OwnFrom(XmlWrapper& source) {
 		if (source.IsObserver()) {
 			m_node = xml::NodeBuilder::Take(move(source.get_node()));
-			update_dependencies();	
+			//update_dependencies();	
 		}
 		else {
-			m_node = exchange(source.m_node, nullptr);
-			throw_if_different_wrapper_types(get_type(), source.get_type());
-			take_dependencies(source);												//В take_dependencies() будет выполнен dynamic_cast
+			m_node = exchange(source.m_node, nullptr);										
 		}
+		throw_if_different_wrapper_types(get_type(), source.get_type());					//В take_dependencies() будет выполнен dynamic_cast
+		take_dependencies(source);
 		return *this;
 	}
 
@@ -149,7 +149,7 @@ namespace wrapper {
 	}
 
 	Employee& Employee::take_dependencies(XmlWrapper& other) {
-		m_properties = move(dynamic_cast<Employee&>(other).m_properties);
+		m_properties = move(static_cast<Employee&>(other).m_properties);
 		return *this;
 	}
 
@@ -250,7 +250,7 @@ namespace wrapper {
 	}
 
 	Department& Department::take_dependencies(XmlWrapper& other) {
-		auto& other_department{ dynamic_cast<Department&>(other) };
+		auto& other_department{ static_cast<Department&>(other) };
 		m_workgroup = move(other_department.m_workgroup);
 		m_summary_salary = exchange(other_department.m_summary_salary, 0);
 		return *this;
@@ -554,7 +554,7 @@ namespace wrapper {
 	}
 
 	Company& Company::take_dependencies(XmlWrapper& other) {
-		auto& other_company{ dynamic_cast<Company&>(other) };							//Допустимо, т.к. в случае несовпадения типов исключение выбросит OwnFrom()
+		auto& other_company{ static_cast<Company&>(other) };							//Допустимо, т.к. в случае несовпадения типов исключение выбросит OwnFrom()
 			
 		m_subdivision = move(other_company.m_subdivision);
 		m_subdivision_map = move(other_company.m_subdivision_map);

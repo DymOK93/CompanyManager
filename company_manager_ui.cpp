@@ -1215,7 +1215,7 @@ QString CompanyManagerUI::request_save_file_path() {
 			this,
 			QObject::tr("Open file"),
 			"",
-			QObject::tr("XML files(*.xml)")
+			QObject::tr("XML files(*.xml) ;; All files(*.*) ")
 		);
 		if (path.isEmpty() || is_writable(path)) {										//Пустой путь -> Пользователь нажал "Отмена"
 			break;

@@ -264,15 +264,15 @@ private:
 	internal_result_t try_to_process(std::any(task_t::* method)(), task_t* command) {
 		size_t error_count_before_op{ m_error_log.size() };
 		internal_result_t result;
-		//try {
+		try {
             result.first = std::invoke(method, command);
-		/*}
+		}
 		catch (const std::exception& exc) {
 			log_error_message(exc.what());
 		}
 		catch (...) {
 			log_error_message("Unknown error");
-		}*/
+		}
 		result.second = m_error_log.size() == error_count_before_op;
 		return result;
 	}

@@ -44,7 +44,7 @@ namespace xml {
 		}
 
 		node_holder Build() {
-            allocator_holder alloc{ get_allocator() };
+            allocator_holder alloc{ MyBase::get_allocator() };
 			return make_node_holder(
 				alloc,
 				Node::Header{ m_name, m_attrs },
@@ -54,7 +54,7 @@ namespace xml {
 	protected:
 		template <class... Types>
 		static node_holder make_node_holder(allocator_holder target_alloc, Types&&... args) {
-			node_holder holder(target_alloc->allocate(), make_deleter(target_alloc));
+			node_holder holder(target_alloc->allocate(1), make_deleter(target_alloc));
 			std::allocator_traits<allocator_t>::construct(
 				*target_alloc,
 				holder.get(),
@@ -66,7 +66,7 @@ namespace xml {
 		static std::function<void(Node*)> make_deleter(allocator_holder target_alloc) {
 			return [alloc = move(target_alloc)](Node* ptr) {
 				std::allocator_traits<allocator_t>::destroy(*alloc, ptr);
-				alloc->deallocate(ptr);
+				alloc->deallocate(ptr, 1);
 			};
 		}
 

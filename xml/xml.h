@@ -27,7 +27,7 @@ namespace xml {
 	using node_holder = std::unique_ptr<Node, deleter_t>;
 	using container_t = std::vector<node_holder>;
 	using attribute_holder = std::pair<text_t, text_t>;
-	using allocator_t = PoolAllocator<Node>;
+	using allocator_t = utility::memory::PoolAllocator<Node>;
 	using allocator_holder = std::shared_ptr<allocator_t>;
 	using allocator_weak = std::weak_ptr<allocator_t>;
 

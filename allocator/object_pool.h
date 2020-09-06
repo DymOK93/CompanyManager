@@ -25,7 +25,7 @@ object_holder<Interface> MakeDummyObjectHolder() {
 template <class Interface, class Object = Interface>
 class ObjectPool {
 public:
-	using shared_allocator_t = PoolAllocator<Object>;
+	using shared_allocator_t = utility::memory::PoolAllocator<Object>;
 	using object_holder = object_holder<Interface>;
 protected:
 	template <class... Types>										//Создает указатель unique_ptr<Interface> на объект типа Object,
@@ -33,7 +33,7 @@ protected:
 		static_assert(std::is_base_of_v<Interface, Object>, "Interface must be the parent of same type of Object");
 		auto& alloc{ get_allocator() };
 		object_holder obj_holder(
-			alloc.allocate(),
+			alloc.allocate(1),
 			&deleter
 		);
 		std::allocator_traits<shared_allocator_t>::construct(
@@ -51,7 +51,7 @@ private:
 			object
 		);
 		get_allocator().deallocate(
-			static_cast<Object*>(object)
+			static_cast<Object*>(object), 1
 		);
 	}
 	static shared_allocator_t& get_allocator() {

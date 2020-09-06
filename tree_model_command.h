@@ -142,12 +142,12 @@ namespace command {
 			}
 		protected:
 			QModelIndex get_department_index() const {
-				return get_target().DepartmentIndex(m_personal_info.department_pos);
+                return MyBase::get_target().DepartmentIndex(m_personal_info.department_pos);
 			}
 			size_t upper_bound_by_full_name(
 				const QModelIndex& department, const QString& full_name
 			) const {
-				return *get_target().UpperBoundChild(full_name, department);			//ѕоиск позиции дл€ вставки сотрудника
+                return *MyBase::get_target().UpperBoundChild(full_name, department);			//ѕоиск позиции дл€ вставки сотрудника
 			}
 		protected:
 			EmployeePersonalFile m_personal_info;

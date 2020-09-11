@@ -348,7 +348,7 @@ namespace wrapper {
 		employee_range GetEmployees() noexcept;
 		employee_view_range GetEmployees() const noexcept;
 
-		employee_it InsertEmployee(Employee employee);
+		employee_it InsertEmployee(Employee&& employee);				//XMLWrapper не копируется
 
 		employee_it EraseEmployee(employee_it employee);
 		bool EraseEmployee(const FullNameRef& name);
@@ -407,10 +407,10 @@ namespace wrapper {
 		department_view_it Find(const std::string& name) const;
 
 		department_view_range GetDepartments() const noexcept;
-		department_it AddDepartment(Department new_department);
+		department_it AddDepartment(Department&& new_department);
 
-		department_it InsertDepartment(const std::string& before, Department new_department);
-		department_it InsertDepartment(department_it before, Department new_department);
+		department_it InsertDepartment(const std::string& before, Department&& new_department);
+		department_it InsertDepartment(department_it before, Department&& new_department);
 
 		const Department* TryGetNext(const std::string& department) const noexcept;
 		const Department* TryGetNext(department_it department) const noexcept;

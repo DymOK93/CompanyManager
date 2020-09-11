@@ -457,7 +457,7 @@ namespace wrapper {
 		return m_workgroup.find(name);
 	}
 
-	Department::employee_it Department::InsertEmployee(Employee employee) {
+	Department::employee_it Department::InsertEmployee(Employee&& employee) {
 		auto [it, success] { 
 			m_workgroup.emplace(
 				employee.GetFullName(),
@@ -648,7 +648,7 @@ namespace wrapper {
 		return extracted_department;
 	}
 
-	Company::department_it Company::AddDepartment(Department new_department) {
+	Company::department_it Company::AddDepartment(Department&& new_department) {
 		if (auto already_exists_it = m_subdivision_map.find(new_department.GetName().get());
 			already_exists_it != m_subdivision_map.end()) {
 			return already_exists_it->second;
@@ -659,7 +659,7 @@ namespace wrapper {
 		return it;
 	}
 
-	Company::department_it Company::InsertDepartment(const string& before, Department new_department) {
+	Company::department_it Company::InsertDepartment(const std::string& before, Department&& new_department) {
 		if (auto already_exists_it = m_subdivision_map.find(new_department.GetName().get());
 			already_exists_it != m_subdivision_map.end()) {
 			return already_exists_it->second;
@@ -671,7 +671,7 @@ namespace wrapper {
 		return InsertDepartment(before_it->second, move(new_department));
 	}
 
-	Company::department_it Company::InsertDepartment(department_it before, Department new_department) {
+	Company::department_it Company::InsertDepartment(department_it before, Department&& new_department) {
 		auto it{ m_subdivision.insert(before, move(new_department)) };
 		register_insert(it->GetName().get(), it == prev(m_subdivision.end()));
 		insert_to_subdivision_map(addressof(m_subdivision_map), it);

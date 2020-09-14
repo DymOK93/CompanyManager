@@ -80,11 +80,11 @@ namespace command {
 			using MyBase = ModifyCompany<AddDepartment, wrapper::Department, wrapper::string_ref>;  //Хранить итератор нельзя, т.к. он может инвалидироваться
 			using command_holder = MyBase::command_holder;										//при последовательности операций "вставка-удаление-<отмена>"	
 		public:
-			AddDepartment(CompanyManager& cm, wrapper::Department department) noexcept;
+			AddDepartment(CompanyManager& cm, wrapper::Department&& department) noexcept;
 			std::any Execute() override;										//return type: wrapper::Company::department_it	
 			std::any Cancel() override;											//return type: empty std::any
 			Type GetType() const noexcept override;
-			static command_holder make_instance(CompanyManager& cm, wrapper::Department department);
+			static command_holder make_instance(CompanyManager& cm, wrapper::Department&& department);
 		};
 
 		//Из-за ObjectPool'a неследоваться напрямую от AddDepartment нельзя
@@ -96,7 +96,7 @@ namespace command {
 			InsertDepartment(
 				CompanyManager& cm,
 				wrapper::string_ref before,
-				wrapper::Department department
+				wrapper::Department&& department
 			) noexcept;
 			std::any Execute() override;										//return type: wrapper::Company::department_it	
 			std::any Cancel() override;											//return type: empty std::any	
@@ -104,7 +104,7 @@ namespace command {
 			static command_holder make_instance(
 				CompanyManager& cm,
 				wrapper::string_ref before,
-				wrapper::Department department
+				wrapper::Department&& department
 			);
 		protected:
 			wrapper::string_ref m_before;
@@ -256,7 +256,7 @@ namespace command {
 			ModifyDepartment(
 				CompanyManager& cm,
 				wrapper::string_ref department,
-				wrapper::Employee employee
+				wrapper::Employee&& employee
 			) noexcept : MyBase(cm, std::move(employee)),
 				m_department(department)
 			{
@@ -285,7 +285,7 @@ namespace command {
 			InsertEmployee(
 				CompanyManager& cm,
 				wrapper::string_ref department,
-				wrapper::Employee employee
+				wrapper::Employee&& employee
 			) noexcept;
 			std::any Execute() override;										//return type: wrapper::Department::employee_it
 			std::any Cancel() override;											//return type: empty std::any
@@ -293,7 +293,7 @@ namespace command {
 			static command_holder make_instance(
 				CompanyManager& cm,
 				wrapper::string_ref department,
-				wrapper::Employee employee
+				wrapper::Employee&& employee
 			);
 		};
 

@@ -55,12 +55,12 @@ namespace wrapper {
 		return *this;
 	}
 
-	DepartmentBuilder& DepartmentBuilder::InsertEmployee(Employee employee) {
+	DepartmentBuilder& DepartmentBuilder::InsertEmployee(Employee&& employee) {
 		m_workgroup.emplace(employee.GetFullName(), move(employee));
 		return *this;
 	}
 
-	DepartmentBuilder& DepartmentBuilder::InsertEmployees(vector<Employee> employees) {
+	DepartmentBuilder& DepartmentBuilder::InsertEmployees(vector<Employee>&& employees) {
 		for (auto& employee : employees) {
 			m_workgroup.emplace(employee.GetFullName(), move(employee));
 		}
@@ -93,7 +93,7 @@ namespace wrapper {
 		return department;
 	}
 
-	CompanyBuilder& CompanyBuilder::AddDepartment(Department department) {
+	CompanyBuilder& CompanyBuilder::AddDepartment(Department&& department) {
 		m_subdivision.push_back(move(department));
 		return *this;
 	}

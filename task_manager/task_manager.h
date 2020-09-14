@@ -59,7 +59,7 @@ public:
 	Результат: b5 - sync failed
 	*******************************************************/
 
-	Result Process(task_holder new_command) {
+	Result Process(task_holder&& new_command) {
 		task_t* command;
 		if (!m_queue_capacity) {						//Если сохранение в очередь для отмены отключено
 			command = new_command.get();
@@ -213,14 +213,14 @@ public:
 		return !Fail();
 	}
 protected:
-	void update_cancel_queue(task_holder command) {
+	void update_cancel_queue(task_holder&& command) {
 		m_cancel.push_back(move(command));
 		if (CanBeCanceled() > m_queue_capacity) {
 			m_cancel.pop_front();
 		}
 	}
 
-	void update_repeat_queue(task_holder command) {
+	void update_repeat_queue(task_holder&& command) {
 		m_repeat.push_back(move(command));
 		if (CanBeRepeated() > m_queue_capacity) {
 			m_repeat.pop_front();

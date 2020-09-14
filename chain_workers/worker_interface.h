@@ -24,7 +24,7 @@ public:
 	using chain_worker_holder = chain_worker_holder<TargetTy>;
 public:
 	virtual void Process(TargetTy& target) = 0;
-	void SetNext(chain_worker_holder next) {
+	void SetNext(chain_worker_holder&& next) {
 		m_next = move(next);
 	}
 	virtual ~ChainWorker() = default;
@@ -71,7 +71,7 @@ public:
 		return std::move(m_strong_head);
 	}
 protected:
-	ConcreteBuilder& attach_node(chain_worker_holder worker) {
+	ConcreteBuilder& attach_node(chain_worker_holder&& worker) {
 		if (!m_strong_head) {
 			m_strong_head = std::move(worker);
 			m_weak_tail = m_strong_head.get();

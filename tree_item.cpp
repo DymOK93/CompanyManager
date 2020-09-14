@@ -2,7 +2,7 @@
 
 CompanyTreeItem::CompanyTreeItem(
 	wrapper::XmlWrapper::Type type,
-	NodeInfo node_info,
+	const NodeInfo& node_info,
 	CompanyTreeItem* parent
 )
 	: m_node_type(type), m_node_info(std::move(node_info)),
@@ -27,11 +27,11 @@ CompanyTreeItem* CompanyTreeItem::parent() {
 	return m_parent;
 }
 
-void CompanyTreeItem::appendChild(tree_item_holder child) {
+void CompanyTreeItem::appendChild(tree_item_holder&& child) {
 	m_child_items.push_back(std::move(child));
 }
 
-bool CompanyTreeItem::insertChild(tree_item_holder child, size_t position) {
+bool CompanyTreeItem::insertChild(tree_item_holder&& child, size_t position) {
 	if (position > m_child_items.size()) {													
 		return false;
 	}

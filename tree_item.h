@@ -40,7 +40,7 @@ public:
 public:
     explicit CompanyTreeItem(
         wrapper::XmlWrapper::Type type,
-        NodeInfo node_info,
+        const NodeInfo& node_info,
         CompanyTreeItem* parent = nullptr
     );
 
@@ -52,8 +52,8 @@ public:
     size_t childNumber() const;                                                //Индекс в m_child_items родительского узла
     tree_item_holder& operator[](size_t idx) noexcept;
 
-    void appendChild(tree_item_holder child);
-    bool insertChild(tree_item_holder child, size_t pos);
+    void appendChild(tree_item_holder&& child);                                 //tree_item_holder некопируем -> избегаем лишнего вызова move c-tor
+    bool insertChild(tree_item_holder&& child, size_t pos);
     bool removeChild(size_t pos);
    
     Type GetType() const noexcept;

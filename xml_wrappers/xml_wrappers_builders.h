@@ -33,8 +33,8 @@ namespace wrapper {
 		using MyBase = xml::BuilderBase<DepartmentBuilder>;
 	public:
 		DepartmentBuilder& SetName(std::string name) noexcept;
-		DepartmentBuilder& InsertEmployee(Employee employee);
-		DepartmentBuilder& InsertEmployees(std::vector<Employee> employees);
+		DepartmentBuilder& InsertEmployee(Employee&& employee);
+		DepartmentBuilder& InsertEmployees(std::vector<Employee>&& employees);	//Вектор некопируемых объектов не может быть скопирован
 		DepartmentBuilder& Reset() noexcept;
 
 		Department Assemble();
@@ -47,7 +47,7 @@ namespace wrapper {
 	public:
 		using MyBase = xml::BuilderBase<CompanyBuilder>;
 	public:
-		CompanyBuilder& AddDepartment(Department department);
+		CompanyBuilder& AddDepartment(Department&& department);
 		CompanyBuilder& Reset() noexcept;
 
 		Company Assemble();

@@ -38,7 +38,7 @@ namespace command {
 		) {
 			return allocate_instance(cm, current_name, move(new_name));
 		}
-		AddDepartment::AddDepartment(CompanyManager& cm, wrapper::Department department) noexcept
+		AddDepartment::AddDepartment(CompanyManager& cm, wrapper::Department&& department) noexcept
 			: MyBase(cm, move(department))
 		{
 		}
@@ -66,14 +66,14 @@ namespace command {
 			return Type::Xml_AddDepartment;
 		}
 
-		AddDepartment::command_holder AddDepartment::make_instance(CompanyManager& cm, wrapper::Department department) {
+		AddDepartment::command_holder AddDepartment::make_instance(CompanyManager& cm, wrapper::Department&& department) {
 			return allocate_instance(cm, move(department));
 		}
 
 		InsertDepartment::InsertDepartment(
 			CompanyManager& cm,
 			wrapper::string_ref before,
-			wrapper::Department department
+			wrapper::Department&& department
 		) noexcept : MyBase(cm, move(department)), m_before(before)
 		{
 		}
@@ -105,7 +105,8 @@ namespace command {
 		InsertDepartment::command_holder InsertDepartment::make_instance(
 			CompanyManager& cm,
 			wrapper::string_ref before,
-			wrapper::Department department) {
+			wrapper::Department&& department
+		) {
 			return allocate_instance(cm, before, move(department));
 		}
 
@@ -236,7 +237,7 @@ namespace command {
 		InsertEmployee::InsertEmployee(
 			CompanyManager& cm,
 			wrapper::string_ref department,
-			wrapper::Employee employee
+			wrapper::Employee&& employee
 		) noexcept : MyBase(cm, department, std::move(employee))
 		{
 		}
@@ -265,7 +266,7 @@ namespace command {
 		InsertEmployee::command_holder InsertEmployee::make_instance(
 			CompanyManager& cm,
 			wrapper::string_ref department,
-			wrapper::Employee employee
+			wrapper::Employee&& employee
 		) {
 			return allocate_instance(cm, department, move(employee));
 		}

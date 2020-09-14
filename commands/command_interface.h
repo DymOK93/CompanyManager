@@ -76,6 +76,8 @@ namespace command {
 
 	template <class TargetTy>
 	class ICommand {
+	private:
+		using purpose_t = std::underlying_type_t<Purpose>;
 	public:
 		ICommand(TargetTy& target) noexcept
 			: m_target(std::addressof(target))
@@ -91,7 +93,7 @@ namespace command {
 				*std::upper_bound(
 					command_purpose.begin(),
 					command_purpose.end(),
-					static_cast<std::underlying_type_t<Type>>(GetType())
+					static_cast<purpose_t>(GetType())
 				)
 			);
 		}
@@ -104,11 +106,12 @@ namespace command {
 		}
 	private:
 		static constexpr std::array<std::underlying_type_t<Purpose>, 4> command_purpose{
-			static_cast<std::underlying_type_t<Purpose>>(Purpose::FileIO),
-			static_cast<std::underlying_type_t<Purpose>>(Purpose::Insert),
-			static_cast<std::underlying_type_t<Purpose>>(Purpose::Remove),
-			static_cast<std::underlying_type_t<Purpose>>(Purpose::EditFields)
+			static_cast<purpose_t>(Purpose::FileIO),
+			static_cast<purpose_t>(Purpose::Insert),
+			static_cast<purpose_t>(Purpose::Remove),
+			static_cast<purpose_t>(Purpose::EditFields)
 		};
+
 		enum class State {
 			Default,
 			Executed,

@@ -1,6 +1,11 @@
 #include "entry_view.h"
 
-DepartmentView::DepartmentView(QWidget* parent) : MyBase(parent) {
+/*GUI Forms*/
+#include "ui_department_view.h"
+#include "ui_employee_view.h"
+
+DepartmentView::DepartmentView(QWidget* parent)
+    : MyBase(parent), m_gui{std::make_unique<Ui::DepartmentViewGUI>()} {
   m_gui->setupUi(this);
   connect(m_gui->enable_editing_chbox, &QCheckBox::stateChanged, this,
           &DepartmentView::view_mode);
@@ -14,6 +19,8 @@ DepartmentView::DepartmentView(QWidget* parent) : MyBase(parent) {
       true);  //—татистические сведени€ не могут быть отредактированы вручную
   m_gui->average_salary_lnedit->setReadOnly(true);
 }
+
+DepartmentView::~DepartmentView() noexcept = default;
 
 void DepartmentView::erased_transmitter() {
   emit erased(get_view());
@@ -81,26 +88,37 @@ void DepartmentView::uncheck_enable_editing_chbox() {
   m_gui->enable_editing_chbox->setChecked(false);
 }
 
-EmployeeView::EmployeeView(QWidget* parent) : MyBase(parent) {
-  m_gui->setupUi(this);
-  m_gui->salary_lnedit->setValidator(
-      m_int_validator.get());  //ѕроверка, что значение €вл€етс€ целым числом
+struct EmployeeView::Impl {
+  Ui::EmployeeViewGUI gui;
+  QIntValidator int_validator{
+      QIntValidator(0, std::numeric_limits<int>::max())};
+};
 
-  connect(m_gui->enable_editing_chbox, &QCheckBox::stateChanged, this,
+EmployeeView::EmployeeView(QWidget* parent)
+    : MyBase(parent), m_impl{std::make_unique<Impl>()} {
+  auto& gui{m_impl->gui};
+
+  gui.setupUi(this);
+  gui.salary_lnedit->setValidator(std::addressof(
+      m_impl->int_validator));  //ѕроверка, что значение €вл€етс€ целым числом
+
+  connect(gui.enable_editing_chbox, &QCheckBox::stateChanged, this,
           &EmployeeView::view_mode);
-  connect(m_gui->surname_lnedit, &QLineEdit::returnPressed, this,
+  connect(gui.surname_lnedit, &QLineEdit::returnPressed, this,
           &EmployeeView::surname_changed_transmitter);
-  connect(m_gui->name_lnedit, &QLineEdit::returnPressed, this,
+  connect(gui.name_lnedit, &QLineEdit::returnPressed, this,
           &EmployeeView::name_changed_transmitter);
-  connect(m_gui->middle_name_lnedit, &QLineEdit::returnPressed, this,
+  connect(gui.middle_name_lnedit, &QLineEdit::returnPressed, this,
           &EmployeeView::middle_name_changed_transmitter);
-  connect(m_gui->function_lnedit, &QLineEdit::returnPressed, this,
+  connect(gui.function_lnedit, &QLineEdit::returnPressed, this,
           &EmployeeView::function_changed_transmitter);
-  connect(m_gui->salary_lnedit, &QLineEdit::returnPressed, this,
+  connect(gui.salary_lnedit, &QLineEdit::returnPressed, this,
           &EmployeeView::salary_updated_transmitter);
-  connect(m_gui->erase_employee_btn, &QPushButton::pressed, this,
+  connect(gui.erase_employee_btn, &QPushButton::pressed, this,
           &EmployeeView::erased_transmitter);
 }
+
+EmployeeView::~EmployeeView() noexcept = default;
 
 void EmployeeView::view_mode(int mode) {
   switch (mode) {
@@ -114,15 +132,17 @@ void EmployeeView::view_mode(int mode) {
 }
 
 void EmployeeView::set_read_only_mode(bool on) {
-  m_gui->surname_lnedit->setReadOnly(on);
-  m_gui->name_lnedit->setReadOnly(on);
-  m_gui->middle_name_lnedit->setReadOnly(on);
-  m_gui->function_lnedit->setReadOnly(on);
-  m_gui->salary_lnedit->setReadOnly(on);
+  auto& gui{m_impl->gui};
+
+  gui.surname_lnedit->setReadOnly(on);
+  gui.name_lnedit->setReadOnly(on);
+  gui.middle_name_lnedit->setReadOnly(on);
+  gui.function_lnedit->setReadOnly(on);
+  gui.salary_lnedit->setReadOnly(on);
 }
 
 void EmployeeView::uncheck_enable_editing_chbox() {
-  m_gui->enable_editing_chbox->setChecked(false);
+  m_impl->gui.enable_editing_chbox->setChecked(false);
 }
 
 EmployeeView& EmployeeView::SetEmployee(const view_info& employee) {
@@ -151,49 +171,50 @@ void EmployeeView::UpdateView() {
 }
 
 void EmployeeView::RestoreSurname() {
-  m_gui->surname_lnedit->setText(QString::fromStdString(
+  m_impl->gui.surname_lnedit->setText(QString::fromStdString(
       get_item<const wrapper::Employee*>()->GetSurname().get().data()));
 }
 
 void EmployeeView::RestoreName() {
-  m_gui->name_lnedit->setText(QString::fromStdString(
+  m_impl->gui.name_lnedit->setText(QString::fromStdString(
       get_item<const wrapper::Employee*>()->GetName().get().data()));
 }
 
 void EmployeeView::RestoreMiddleName() {
-  m_gui->middle_name_lnedit->setText(QString::fromStdString(
+  m_impl->gui.middle_name_lnedit->setText(QString::fromStdString(
       get_item<const wrapper::Employee*>()->GetMiddleName().get().data()));
 }
 
 void EmployeeView::RestoreFunction() {
-  m_gui->function_lnedit->setText(QString::fromStdString(
+  m_impl->gui.function_lnedit->setText(QString::fromStdString(
       get_item<const wrapper::Employee*>()->GetFunction().get().data()));
 }
 
 void EmployeeView::RestoreSalary() {
-  m_gui->salary_lnedit->setText(
+  m_impl->gui.salary_lnedit->setText(
       QString::number(get_item<const wrapper::Employee*>()->GetSalary()));
 }
 
 void EmployeeView::surname_changed_transmitter() {
-  emit surname_changed(get_view(), m_gui->surname_lnedit->text());
+  emit surname_changed(get_view(), m_impl->gui.surname_lnedit->text());
 }
 
 void EmployeeView::name_changed_transmitter() {
-  emit name_changed(get_view(), m_gui->name_lnedit->text());
+  emit name_changed(get_view(), m_impl->gui.name_lnedit->text());
 }
 
 void EmployeeView::middle_name_changed_transmitter() {
-  emit middle_name_changed(get_view(), m_gui->middle_name_lnedit->text());
+  emit middle_name_changed(get_view(), m_impl->gui.middle_name_lnedit->text());
 }
 
 void EmployeeView::function_changed_transmitter() {
-  emit function_changed(get_view(), m_gui->function_lnedit->text());
+  emit function_changed(get_view(), m_impl->gui.function_lnedit->text());
 }
 
 void EmployeeView::salary_updated_transmitter() {
-  emit salary_updated(get_view(), static_cast<wrapper::Employee::salary_t>(
-                                      m_gui->salary_lnedit->text().toInt()));
+  emit salary_updated(get_view(),
+                      static_cast<wrapper::Employee::salary_t>(
+                          m_impl->gui.salary_lnedit->text().toInt()));
 }
 
 void EmployeeView::erased_transmitter() {

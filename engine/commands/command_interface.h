@@ -1,4 +1,6 @@
 #pragma once
+#include "cm_engine_dll_interface.hpp"
+
 #include "object_pool.h"
 
 #include <algorithm>
@@ -82,12 +84,14 @@ class ICommand {
   using purpose_t = std::underlying_type_t<Purpose>;
 
  public:
-  ICommand(TargetTy& target) noexcept : m_target(std::addressof(target)) {}
+  ICommand(TargetTy& target) noexcept
+      : m_target(std::addressof(target)) {}
   virtual ~ICommand() = default;
 
   virtual std::any Execute() = 0;
   virtual std::any Cancel() = 0;
   virtual Type GetType() const noexcept = 0;
+
   Purpose GetPurpose() const noexcept {
     return static_cast<Purpose>(
         *std::upper_bound(command_purpose.begin(), command_purpose.end(),
@@ -106,12 +110,14 @@ class ICommand {
                       static_cast<purpose_t>(Purpose::EditFields)};
 
   enum class State { Default, Executed, Cancelled };
+
   void register_execute() {
     if (m_state == State::Executed) {  //Повторное выполнение команды запрещено
       throw_impossible_to_execute();
     }
     m_state = State::Executed;
   }
+
   void register_cancel() {  //Отмена невыполненной команды недопустима
     if (m_state != State::Executed) {
       throw_impossible_to_execute();

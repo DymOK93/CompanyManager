@@ -18,7 +18,7 @@ class ModifyCommand : public AllocatedCommand<ConcreteCommand, CompanyManager> {
 
  protected:
   wrapper::Company* get_tree_ptr() {  //ѕри отсутствии открытого документа
-                                      //Modify() выбросит исключение
+                                      // Modify() выбросит исключение
     return std::addressof(MyBase::get_target().Modify());
   }
   wrapper::Company& get_tree_ref() { return MyBase::get_target().Modify(); }
@@ -30,15 +30,18 @@ class RenameDepartment : public ModifyCommand<RenameDepartment> {
   using command_holder = MyBase::command_holder;
 
  public:
-  RenameDepartment(CompanyManager& cm,
-                   wrapper::string_ref current_name,
-                   std::string new_name) noexcept;
-  std::any Execute() override;  // return type: wrapper::RenameResult
-  std::any Cancel() override;   // return type: wrapper::RenameResult
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      wrapper::string_ref current_name,
-                                      std::string new_name);
+  CM_ENGINE_API RenameDepartment(CompanyManager& cm,
+                                 wrapper::string_ref current_name,
+                                 std::string new_name) noexcept;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: wrapper::RenameResult
+  CM_ENGINE_API std::any Cancel()
+      override;  // return type: wrapper::RenameResult
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      wrapper::string_ref current_name,
+      std::string new_name);
 
  protected:
   wrapper::string_ref m_current_name;
@@ -82,12 +85,15 @@ class AddDepartment : public ModifyCompany<AddDepartment,
       MyBase::command_holder;  //при последовательности операций
                                //"вставка-удаление-<отмена>"
  public:
-  AddDepartment(CompanyManager& cm, wrapper::Department&& department) noexcept;
-  std::any Execute() override;  // return type: wrapper::Company::department_it
-  std::any Cancel() override;   // return type: empty std::any
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      wrapper::Department&& department);
+  CM_ENGINE_API AddDepartment(CompanyManager& cm,
+                              wrapper::Department&& department) noexcept;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: wrapper::Company::department_it
+  CM_ENGINE_API std::any Cancel() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      wrapper::Department&& department);
 };
 
 //»з-за ObjectPool'a неследоватьс€ напр€мую от AddDepartment нельз€
@@ -100,15 +106,17 @@ class InsertDepartment : public ModifyCompany<InsertDepartment,
   using command_holder = MyBase::command_holder;
 
  public:
-  InsertDepartment(CompanyManager& cm,
-                   wrapper::string_ref before,
-                   wrapper::Department&& department) noexcept;
-  std::any Execute() override;  // return type: wrapper::Company::department_it
-  std::any Cancel() override;   // return type: empty std::any
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      wrapper::string_ref before,
-                                      wrapper::Department&& department);
+  CM_ENGINE_API InsertDepartment(CompanyManager& cm,
+                                 wrapper::string_ref before,
+                                 wrapper::Department&& department) noexcept;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: wrapper::Company::department_it
+  CM_ENGINE_API std::any Cancel() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      wrapper::string_ref before,
+      wrapper::Department&& department);
 
  protected:
   wrapper::string_ref m_before;
@@ -124,12 +132,15 @@ class RemoveDepartment : public ModifyCompany<RemoveDepartment,
   using department_it = wrapper::Company::department_it;
 
  public:
-  RemoveDepartment(CompanyManager& cm, wrapper::string_ref department) noexcept;
-  std::any Execute() override;  // return type: empty std::any
-  std::any Cancel() override;   // return type: wrapper::Company::department_it
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      wrapper::string_ref department);
+  CM_ENGINE_API RemoveDepartment(CompanyManager& cm,
+                                 wrapper::string_ref department) noexcept;
+  CM_ENGINE_API std::any Execute() override;  // return type: empty std::any
+  CM_ENGINE_API std::any Cancel()
+      override;  // return type: wrapper::Company::department_it
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      wrapper::string_ref department);
 
  protected:
   std::optional<wrapper::string_ref> m_before;
@@ -209,8 +220,9 @@ class ChangeEmployeeSurname
 
  public:
   using MyBase::MyBase;
-  std::any Execute() override;  // return type: wrapper::RenameResult
-  Type GetType() const noexcept override;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: wrapper::RenameResult
+  CM_ENGINE_API Type GetType() const noexcept override;
 };
 
 class ChangeEmployeeName : public ModifyEmployeeTextFields<ChangeEmployeeName> {
@@ -220,8 +232,8 @@ class ChangeEmployeeName : public ModifyEmployeeTextFields<ChangeEmployeeName> {
 
  public:
   using MyBase::MyBase;
-  std::any Execute() override;  // return type: empty std::any
-  Type GetType() const noexcept override;
+  CM_ENGINE_API std::any Execute() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
 };
 
 class ChangeEmployeeMiddleName
@@ -232,8 +244,8 @@ class ChangeEmployeeMiddleName
 
  public:
   using MyBase::MyBase;
-  std::any Execute() override;  // return type: empty std::any
-  Type GetType() const noexcept override;
+  CM_ENGINE_API std::any Execute() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
 };
 
 class ChangeEmployeeFunction
@@ -244,8 +256,8 @@ class ChangeEmployeeFunction
 
  public:
   using MyBase::MyBase;
-  std::any Execute() override;  // return type: empty std::any
-  Type GetType() const noexcept override;
+  CM_ENGINE_API std::any Execute() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
 };
 
 class UpdateEmployeeSalary
@@ -259,8 +271,9 @@ class UpdateEmployeeSalary
 
  public:
   using MyBase::MyBase;
-  std::any Execute() override;  // return type: salary_t (salary before execute)
-  Type GetType() const noexcept override;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: salary_t (salary before execute)
+  CM_ENGINE_API Type GetType() const noexcept override;
 };
 
 template <class ConcreteCommand>
@@ -297,32 +310,37 @@ class InsertEmployee : public ModifyDepartment<InsertEmployee> {
   using command_holder = MyBase::command_holder;
 
  public:
-  InsertEmployee(CompanyManager& cm,
-                 wrapper::string_ref department,
-                 wrapper::Employee&& employee) noexcept;
-  std::any Execute() override;  // return type: wrapper::Department::employee_it
-  std::any Cancel() override;   // return type: empty std::any
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      wrapper::string_ref department,
-                                      wrapper::Employee&& employee);
+  CM_ENGINE_API InsertEmployee(CompanyManager& cm,
+                               wrapper::string_ref department,
+                               wrapper::Employee&& employee) noexcept;
+  CM_ENGINE_API std::any Execute()
+      override;  // return type: wrapper::Department::employee_it
+  CM_ENGINE_API std::any Cancel() override;  // return type: empty std::any
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      wrapper::string_ref department,
+      wrapper::Employee&& employee);
 };
 
 class RemoveEmployee
     : public ModifyDepartment<RemoveEmployee> {  //¬ыполн€ет действи€, полность
                                                  //обратные операци€м в
-                                                 //InsertEmployee
+                                                 // InsertEmployee
  public:
   using MyBase = ModifyDepartment<RemoveEmployee>;
   using command_holder = MyBase::command_holder;
 
  public:
-  RemoveEmployee(CompanyManager& cm, const EmployeePersonalFile& employee);
-  std::any Execute() override;  // return type: empty std::anyt
-  std::any Cancel() override;   // return type: wrapper::Department::employee_i
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm,
-                                      const EmployeePersonalFile& employee);
+  CM_ENGINE_API RemoveEmployee(CompanyManager& cm,
+                               const EmployeePersonalFile& employee);
+  CM_ENGINE_API std::any Execute() override;  // return type: empty std::anyt
+  CM_ENGINE_API std::any Cancel()
+      override;  // return type: wrapper::Department::employee_i
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(
+      CompanyManager& cm,
+      const EmployeePersonalFile& employee);
 };
 }  // namespace xml_wrapper
 }  // namespace command

@@ -1,5 +1,5 @@
 #include <QtWidgets/QApplication>
-#include "company_manager_ui.h"
+#include "main_window.h"
 
 int main(int argc, char* argv[]) {
   QApplication a(argc, argv);

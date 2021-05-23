@@ -16,7 +16,7 @@ class CommandBase : public AllocatedCommand<ConcreteCommand, CompanyManager> {
   }
 };
 
-class GetPath : public CommandBase<GetPath> {
+class CM_ENGINE_API GetPath : public CommandBase<GetPath> {
  public:
   using MyBase = CommandBase<GetPath>;
 
@@ -31,16 +31,17 @@ class SetPath : public CommandBase<SetPath> {
   using MyBase = CommandBase<SetPath>;
 
  public:
-  SetPath(CompanyManager& cm, std::string path) noexcept;
-  std::any Execute() override;
-  Type GetType() const noexcept override;
-  static command_holder make_instance(CompanyManager& cm, std::string path);
+  CM_ENGINE_API SetPath(CompanyManager& cm, std::string path) noexcept;
+  CM_ENGINE_API std::any Execute() override;
+  CM_ENGINE_API Type GetType() const noexcept override;
+  CM_ENGINE_API static command_holder make_instance(CompanyManager& cm,
+                                                    std::string path);
 
  private:
   std::string m_path;
 };
 
-class CreateDocument : public CommandBase<CreateDocument> {
+class CM_ENGINE_API CreateDocument : public CommandBase<CreateDocument> {
  public:
   using MyBase = CommandBase<CreateDocument>;
 
@@ -50,7 +51,7 @@ class CreateDocument : public CommandBase<CreateDocument> {
   Type GetType() const noexcept override;
 };
 
-class Load : public CommandBase<Load> {
+class CM_ENGINE_API Load : public CommandBase<Load> {
  public:
   using MyBase = CommandBase<Load>;
 
@@ -60,7 +61,7 @@ class Load : public CommandBase<Load> {
   Type GetType() const noexcept override;
 };
 
-class Save : public CommandBase<Save> {
+class CM_ENGINE_API Save : public CommandBase<Save> {
  public:
   using MyBase = CommandBase<Save>;
 
@@ -70,7 +71,7 @@ class Save : public CommandBase<Save> {
   Type GetType() const noexcept override;
 };
 
-class CheckLoaded : public CommandBase<CheckLoaded> {
+class CM_ENGINE_API CheckLoaded : public CommandBase<CheckLoaded> {
  public:
   using MyBase = CommandBase<CheckLoaded>;
 
@@ -80,7 +81,7 @@ class CheckLoaded : public CommandBase<CheckLoaded> {
   Type GetType() const noexcept override;
 };
 
-class CheckSaved : public CommandBase<CheckSaved> {
+class CM_ENGINE_API CheckSaved : public CommandBase<CheckSaved> {
  public:
   using MyBase = CommandBase<CheckSaved>;
 
@@ -90,7 +91,7 @@ class CheckSaved : public CommandBase<CheckSaved> {
   Type GetType() const noexcept override;
 };
 
-class Reset : public CommandBase<Reset> {
+class CM_ENGINE_API Reset : public CommandBase<Reset> {
  public:
   using MyBase = CommandBase<Reset>;
 

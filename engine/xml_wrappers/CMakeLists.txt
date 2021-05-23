@@ -1,8 +1,6 @@
 cmake_minimum_required (VERSION 3.8)
 project("XML Tree Wrappers")
 
-set(CMAKE_CXX_STANDARD_REQUIRED 17)
-
 set(
 	XML_WRAPPERS_HEADER_FILES
 		"xml_wrappers.h"

@@ -1,4 +1,6 @@
 #pragma once
+#include "cm_engine_dll_interface.hpp"
+
 #include "file_workers.h"
 #include "xml_wrappers.h"
 #include "xml_wrappers_builders.h"
@@ -8,13 +10,14 @@
 #include <iostream>
 #include <memory>
 
-class CompanyManager {
+class CM_ENGINE_API CompanyManager {
  private:
   struct FileInfo {
     bool is_loaded{false};
     bool is_saved{true};
     std::string current_path;
   };
+
   struct XmlTree {
     xml::Document m_document;
     wrapper::Company company;

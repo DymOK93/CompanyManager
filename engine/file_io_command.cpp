@@ -4,7 +4,6 @@ using namespace std;
 namespace command {
 namespace file_io {
 /*GetPath*/
-
 any GetPath::Execute() {
   return get_target().GetPath();
 }
@@ -14,9 +13,8 @@ Type GetPath::GetType() const noexcept {
 }
 
 /*SetPath*/
-
 SetPath::SetPath(CompanyManager& cm, string path) noexcept
-    : CommandBase(cm), m_path(move(path)) {}
+    : MyBase(cm), m_path{move(path)} {}
 
 any SetPath::Execute() {
   get_target().SetPath(move(m_path));

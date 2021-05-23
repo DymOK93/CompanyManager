@@ -31,10 +31,10 @@ class ObjectPool {
  protected:
   template <class... Types>  //—оздает указатель unique_ptr<Interface> на объект
                              //типа Object,
-                             static object_holder allocate_instance(
-                                 Types&&... args) {  //передава€ в конструктор
-                                                     //последнего все полученные
-                                                     //аргументы
+  static object_holder allocate_instance(
+      Types&&... args) {  //передава€ в конструктор
+                          //последнего все полученные
+                          //аргументы
     static_assert(std::is_base_of_v<Interface, Object>,
                   "Interface must be the parent of same type of Object");
     auto& alloc{get_allocator()};
@@ -43,7 +43,7 @@ class ObjectPool {
         alloc,
         static_cast<Object*>(
             obj_holder.get()),  //— помощью static_assert проверено, что такое
-                                //преобразование возмжно
+                                //преобразование возможно
         std::forward<Types>(args)...);
     return obj_holder;
   }

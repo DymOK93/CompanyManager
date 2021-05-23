@@ -3,7 +3,7 @@
 #include "tree_item.h"
 #include "tree_model.h"
 #include "xml_wrappers.h"
-#include "company_manager_engine.h"
+#include "main_window.h"
 
 #include <utility>
 #include <variant>

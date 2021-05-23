@@ -1,5 +1,5 @@
 #pragma once
-#include "company_manager_engine.h"
+#include "engine.h"
 #include "tree_item.h"
 #include "xml_wrappers.h"
 
@@ -9,6 +9,7 @@
 
 #include <QAbstractItemModel>
 #include <QModelIndex>
+#include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QtWidgets>
@@ -81,9 +82,9 @@ class CompanyTreeModel : public QAbstractItemModel {
           index);  // string_view на строку, лежащую в далеком XML-узле
 
   QModelIndex GetPrevItem(
-      const QModelIndex& index);  //Обращенеи к предыдущей строке
+      const QModelIndex& index);  //Обращение к предыдущей строке
   QModelIndex GetNextItem(
-      const QModelIndex& index);  //Обращенеи к следующей строке
+      const QModelIndex& index);  //Обращение к следующей строке
 
   std::optional<size_t> FindChild(
       const QString& request,

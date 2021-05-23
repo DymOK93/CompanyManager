@@ -2,10 +2,6 @@
 #include "dialog_base.h"
 #include "xml_wrappers.h"
 
-/*GUI Forms*/
-#include "ui_department_view.h"
-#include "ui_employee_view.h"
-
 #include <limits>
 #include <memory>
 #include <optional>
@@ -14,6 +10,11 @@
 #include <QRegExp>
 #include <QString>
 #include <QtWidgets>
+
+namespace Ui {
+class DepartmentViewGUI;
+class EmployeeViewGUI;
+}  // namespace Ui
 
 class IViewer : public QWidget {
   Q_OBJECT
@@ -62,6 +63,12 @@ class DepartmentView : public ViewBase<const wrapper::Department*> {
 
  public:
   DepartmentView(QWidget* parent = nullptr);
+  DepartmentView(const DepartmentView&) = delete;
+  DepartmentView(DepartmentView&&) noexcept = default;
+  DepartmentView& operator=(const DepartmentView&) = delete;
+  DepartmentView& operator=(DepartmentView&&) noexcept = default;
+  ~DepartmentView() noexcept;
+
   DepartmentView& SetDepartment(const view_info& department);
   DepartmentView& Reset() noexcept;
 
@@ -84,8 +91,7 @@ class DepartmentView : public ViewBase<const wrapper::Department*> {
   void uncheck_enable_editing_chbox();
 
  private:
-  std::unique_ptr<Ui::DepartmentViewGUI> m_gui{
-      std::make_unique<Ui::DepartmentViewGUI>()};
+  std::unique_ptr<Ui::DepartmentViewGUI> m_gui;
 };
 
 class EmployeeView
@@ -97,8 +103,17 @@ class EmployeeView
                    ViewBase<wrapper::string_ref, const wrapper::Employee*>;
   using view_info = typename MyBase::ViewInfo;
 
+ private:
+  struct Impl;
+
  public:
   EmployeeView(QWidget* parent = nullptr);
+  EmployeeView(const EmployeeView&) = delete;
+  EmployeeView(EmployeeView&&) noexcept = default;
+  EmployeeView& operator=(const EmployeeView&) = delete;
+  EmployeeView& operator=(EmployeeView&&) noexcept = default;
+  ~EmployeeView() noexcept;
+
   EmployeeView& SetEmployee(const view_info& employee);
   EmployeeView& Reset() noexcept;
   void UpdateModelIndex(
@@ -131,10 +146,5 @@ class EmployeeView
   void uncheck_enable_editing_chbox();
 
  private:
-  std::unique_ptr<Ui::EmployeeViewGUI> m_gui{
-      std::make_unique<Ui::EmployeeViewGUI>()};
-  std::unique_ptr<QIntValidator> m_int_validator{
-      std::make_unique<QIntValidator>(
-          0,
-          std::numeric_limits<int>::max())};  //Диапазон значений
+  std::unique_ptr<Impl> m_impl;
 };

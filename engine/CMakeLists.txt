@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(CompanyManagerEngine)
+project("Company Manager Engine")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,22 +19,25 @@ set(
 
 set(TARGET_DLL cm_engine)
 
-#Пуловый аллокатор
+# Пуловый аллокатор
 add_subdirectory(allocator)
 
-#Интерфейс цепочек команд
+# Интерфейс цепочек команд
 add_subdirectory(chain_workers)
 
-#Cистема команд
+# DLL export/import
+add_subdirectory(dll_interface)
+
+# Cистема команд
 add_subdirectory(commands)
 
-#Менеджер задач (управляет выполнением, отменой и повтором операций)
+# Менеджер задач (управляет выполнением, отменой и повтором операций)
 add_subdirectory(task_manager)
 
-#Библиотеки для работы с XML
+# Библиотеки для работы с XML
 add_subdirectory(xml_parser)
 
-#Обёртки для XML-дерева
+# Обёртки для XML-дерева
 add_subdirectory(xml_wrappers)
 
 add_library(
@@ -42,11 +45,19 @@ add_library(
 		${CM_ENGINE_HEADER_FILES}
 		${CM_ENGINE_SOURCE_FILES}
 )
-
+target_compile_definitions( 
+	${TARGET_DLL} PRIVATE
+		CM_ENGINE_EXPORT
+)
+target_include_directories(
+	${TARGET_DLL} INTERFACE
+		${CMAKE_CURRENT_SOURCE_DIR}
+)
 target_link_libraries(
 	${TARGET_DLL} PUBLIC
 		object_pool
 		chain_workers
+		cm_engine_dll_interface
 		command_interface
 		task_mgr
 		xml_parser

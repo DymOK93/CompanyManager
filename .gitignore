@@ -1,6 +1,9 @@
-#Служебные файлы системы сборки
+# Build system temporary files and folders
 .vs/
 out/
-Releases/
-CMakeLists.txt.user
+exe/
+*.pdb
+*.ilk
+
+# CMake devmachine-specific config
 CMakeSettings.json

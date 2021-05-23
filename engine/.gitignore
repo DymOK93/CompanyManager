@@ -1,0 +1,9 @@
+# Build system temporary files and folders
+.vs/
+out/
+exe/
+*.pdb
+*.ilk
+
+# CMake devmachine-specific config
+CMakeSettings.json

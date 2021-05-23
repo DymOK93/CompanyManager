@@ -1,18 +1,25 @@
 #include "new_entry_dialog.h"
 
+/*GUI forms*/
+#include "ui_new_department_dialog.h"
+#include "ui_new_employee_dialog.h"
+
 namespace dialog {
 NewDepartment::NewDepartment(wrapper::DepartmentBuilder& builder,
                              message::Plantation& plantation,
                              QDialog* parent)
     : QDialog(parent),
       DialogBase(plantation),
-      m_builder(std::addressof(builder)) {
+      m_builder(std::addressof(builder)),
+      m_gui{std::make_unique<Ui::AddDepartmentDialogGUI>()} {
   m_gui->setupUi(this);
   connect(m_gui->button_box, &QDialogButtonBox::accepted, this,
           &NewDepartment::accept);
   connect(m_gui->button_box, &QDialogButtonBox::rejected, this,
           &QDialog::reject);
 }
+
+NewDepartment::~NewDepartment() noexcept = default;
 
 void NewDepartment::accept() {
   if (set_checked_name()) {
@@ -41,13 +48,16 @@ NewEmployee::NewEmployee(wrapper::EmployeeBuilder& builder,
                          QDialog* parent)
     : QDialog(parent),
       DialogBase(plantation),
-      m_builder(std::addressof(builder)) {
+      m_builder(std::addressof(builder)),
+      m_gui{std::make_unique<Ui::AddEmployeeDialogGUI>()} {
   m_gui->setupUi(this);
   connect(m_gui->button_box, &QDialogButtonBox::accepted, this,
           &NewEmployee::set_checked_data);
   connect(m_gui->button_box, &QDialogButtonBox::rejected, this,
           &QDialog::reject);
 }
+
+NewEmployee::~NewEmployee() noexcept = default;
 
 void NewEmployee::set_checked_data() {
   PipelineBuilder()

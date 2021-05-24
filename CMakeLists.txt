@@ -30,7 +30,7 @@ add_subdirectory(engine)
 add_subdirectory(interface)
 
 add_executable(
-	${TARGET_EXE}
+	${TARGET_EXE} WIN32
 		${COMPANY_MANAGER_SOURCE_FILES}
 )
 target_link_libraries( 
